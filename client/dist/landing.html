@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OneDrive Duplicate Finder - AI-Powered Team Duplicate Manager</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            line-height: 1.6;
+            color: #2c3e50;
+        }
+
+        .hero {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 4rem 2rem;
+            text-align: center;
+        }
+
+        .hero h1 {
+            font-size: 3.5rem;
+            margin-bottom: 1rem;
+            font-weight: 700;
+        }
+
+        .hero p {
+            font-size: 1.3rem;
+            margin-bottom: 2rem;
+            opacity: 0.9;
+        }
+
+        .cta-button {
+            background: #27ae60;
+            color: white;
+            padding: 1rem 2rem;
+            border: none;
+            border-radius: 8px;
+            font-size: 1.1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-decoration: none;
+            display: inline-block;
+        }
+
+        .cta-button:hover {
+            background: #229954;
+            transform: translateY(-2px);
+        }
+
+        .features {
+            padding: 4rem 2rem;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .features h2 {
+            text-align: center;
+            font-size: 2.5rem;
+            margin-bottom: 3rem;
+            color: #2c3e50;
+        }
+
+        .features-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 2rem;
+        }
+
+        .feature-card {
+            background: white;
+            border-radius: 12px;
+            padding: 2rem;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+            border-left: 4px solid #667eea;
+        }
+
+        .feature-icon {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+        }
+
+        .feature-card h3 {
+            font-size: 1.5rem;
+            margin-bottom: 1rem;
+            color: #2c3e50;
+        }
+
+        .feature-card p {
+            color: #7f8c8d;
+            line-height: 1.6;
+        }
+
+        .unique-badge {
+            background: #e74c3c;
+            color: white;
+            padding: 0.25rem 0.75rem;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            display: inline-block;
+            margin-bottom: 1rem;
+        }
+
+        .comparison {
+            background: #f8f9fa;
+            padding: 4rem 2rem;
+        }
+
+        .comparison h2 {
+            text-align: center;
+            font-size: 2.5rem;
+            margin-bottom: 3rem;
+            color: #2c3e50;
+        }
+
+        .comparison-table {
+            max-width: 1000px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+        }
+
+        .comparison-table table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .comparison-table th,
+        .comparison-table td {
+            padding: 1rem;
+            text-align: left;
+            border-bottom: 1px solid #e9ecef;
+        }
+
+        .comparison-table th {
+            background: #667eea;
+            color: white;
+            font-weight: 600;
+        }
+
+        .comparison-table tr:nth-child(even) {
+            background: #f8f9fa;
+        }
+
+        .check {
+            color: #27ae60;
+            font-weight: bold;
+        }
+
+        .cross {
+            color: #e74c3c;
+            font-weight: bold;
+        }
+
+        .unique {
+            background: #fff3cd;
+            color: #856404;
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.8rem;
+            font-weight: 600;
+        }
+
+        .pricing {
+            padding: 4rem 2rem;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .pricing h2 {
+            text-align: center;
+            font-size: 2.5rem;
+            margin-bottom: 3rem;
+            color: #2c3e50;
+        }
+
+        .pricing-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 2rem;
+        }
+
+        .pricing-card {
+            background: white;
+            border-radius: 12px;
+            padding: 2rem;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+            text-align: center;
+            border: 2px solid transparent;
+            transition: all 0.3s ease;
+        }
+
+        .pricing-card.featured {
+            border-color: #667eea;
+            transform: scale(1.05);
+        }
+
+        .pricing-card h3 {
+            font-size: 1.5rem;
+            margin-bottom: 1rem;
+            color: #2c3e50;
+        }
+
+        .price {
+            font-size: 2.5rem;
+            font-weight: bold;
+            color: #667eea;
+            margin-bottom: 1rem;
+        }
+
+        .price .period {
+            font-size: 1rem;
+            color: #7f8c8d;
+        }
+
+        .pricing-features {
+            list-style: none;
+            margin-bottom: 2rem;
+        }
+
+        .pricing-features li {
+            padding: 0.5rem 0;
+            color: #7f8c8d;
+        }
+
+        .pricing-features li:before {
+            content: "✅ ";
+            color: #27ae60;
+        }
+
+        .footer {
+            background: #2c3e50;
+            color: white;
+            padding: 2rem;
+            text-align: center;
+        }
+
+        @media (max-width: 768px) {
+            .hero h1 {
+                font-size: 2.5rem;
+            }
+            
+            .features-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .pricing-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .comparison-table {
+                overflow-x: auto;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="hero">
+        <h1>🤖 OneDrive Duplicate Finder</h1>
+        <p>The world's first AI-powered team duplicate manager for OneDrive</p>
+        <a href="/" class="cta-button">Try It Free</a>
+    </div>
+
+    <div class="features">
+        <h2>🚀 Unique Features That Set Us Apart</h2>
+        <div class="features-grid">
+            <div class="feature-card">
+                <div class="unique-badge">UNIQUE</div>
+                <div class="feature-icon">🤖</div>
+                <h3>AI-Powered Detection</h3>
+                <p>Advanced machine learning algorithms detect similar images, documents, and videos even when they have different names or sizes. Our AI provides confidence scores for every duplicate group.</p>
+            </div>
+            
+            <div class="feature-card">
+                <div class="unique-badge">UNIQUE</div>
+                <div class="feature-icon">👥</div>
+                <h3>Team Collaboration</h3>
+                <p>Collaborate with your team to find and manage duplicates across shared folders. Control permissions, track activities, and work together efficiently.</p>
+            </div>
+            
+            <div class="feature-card">
+                <div class="unique-badge">UNIQUE</div>
+                <div class="feature-icon">🧠</div>
+                <h3>Smart Organization</h3>
+                <p>AI-driven insights identify old files, large files, and unused content. Get intelligent recommendations and automated organization plans.</p>
+            </div>
+            
+            <div class="feature-card">
+                <div class="feature-icon">🖼️</div>
+                <h3>Visual Similarity</h3>
+                <p>Detect similar images using perceptual hashing, even when they have different names, sizes, or slight variations in content.</p>
+            </div>
+            
+            <div class="feature-card">
+                <div class="feature-icon">📄</div>
+                <h3>Content Analysis</h3>
+                <p>Find similar documents based on actual content, not just metadata. Perfect for finding duplicate reports, presentations, and text files.</p>
+            </div>
+            
+            <div class="feature-card">
+                <div class="feature-icon">🎥</div>
+                <h3>Video Comparison</h3>
+                <p>Identify similar videos using frame analysis and audio comparison. Find duplicate video content across your OneDrive.</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="comparison">
+        <h2>📊 How We Compare to Competitors</h2>
+        <div class="comparison-table">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Feature</th>
+                        <th>Your App</th>
+                        <th>Cloud Duplicate Finder</th>
+                        <th>OneDrive Built-in</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>Basic Duplicate Detection</td>
+                        <td><span class="check">✅</span></td>
+                        <td><span class="check">✅</span></td>
+                        <td><span class="cross">❌</span></td>
+                    </tr>
+                    <tr>
+                        <td>AI-Powered Detection</td>
+                        <td><span class="unique">UNIQUE</span></td>
+                        <td><span class="cross">❌</span></td>
+                        <td><span class="cross">❌</span></td>
+                    </tr>
+                    <tr>
+                        <td>Team Collaboration</td>
+                        <td><span class="unique">UNIQUE</span></td>
+                        <td><span class="cross">❌</span></td>
+                        <td><span class="cross">❌</span></td>
+                    </tr>
+                    <tr>
+                        <td>Smart Organization</td>
+                        <td><span class="unique">UNIQUE</span></td>
+                        <td><span class="cross">❌</span></td>
+                        <td><span class="cross">❌</span></td>
+                    </tr>
+                    <tr>
+                        <td>Visual Similarity</td>
+                        <td><span class="unique">UNIQUE</span></td>
+                        <td><span class="cross">❌</span></td>
+                        <td><span class="cross">❌</span></td>
+                    </tr>
+                    <tr>
+                        <td>Multi-Folder Compare</td>
+                        <td><span class="check">✅</span></td>
+                        <td><span class="cross">❌</span></td>
+                        <td><span class="cross">❌</span></td>
+                    </tr>
+                    <tr>
+                        <td>Microsoft Native</td>
+                        <td><span class="check">✅</span></td>
+                        <td><span class="cross">❌</span></td>
+                        <td><span class="check">✅</span></td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="pricing">
+        <h2>💰 Simple, Transparent Pricing</h2>
+        <div class="pricing-grid">
+            <div class="pricing-card">
+                <h3>Free</h3>
+                <div class="price">$0<span class="period">/month</span></div>
+                <ul class="pricing-features">
+                    <li>100 files per month</li>
+                    <li>Basic duplicate detection</li>
+                    <li>Single folder analysis</li>
+                    <li>Standard support</li>
+                </ul>
+                <a href="/" class="cta-button">Get Started</a>
+            </div>
+            
+            <div class="pricing-card featured">
+                <h3>Pro</h3>
+                <div class="price">$5<span class="period">/month</span></div>
+                <ul class="pricing-features">
+                    <li>Unlimited files</li>
+                    <li>AI-powered detection</li>
+                    <li>Multi-folder comparison</li>
+                    <li>Smart organization</li>
+                    <li>Priority support</li>
+                </ul>
+                <a href="/" class="cta-button">Start Free Trial</a>
+            </div>
+            
+            <div class="pricing-card">
+                <h3>Enterprise</h3>
+                <div class="price">$20<span class="period">/month</span></div>
+                <ul class="pricing-features">
+                    <li>Everything in Pro</li>
+                    <li>Team collaboration</li>
+                    <li>Advanced analytics</li>
+                    <li>Compliance reporting</li>
+                    <li>Dedicated support</li>
+                </ul>
+                <a href="/" class="cta-button">Contact Sales</a>
+            </div>
+        </div>
+    </div>
+
+    <div class="footer">
+        <p>&copy; 2024 OneDrive Duplicate Finder. The world's first AI-powered team duplicate manager.</p>
+    </div>
+</body>
+</html> 

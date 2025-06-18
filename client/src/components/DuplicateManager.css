@@ -1,0 +1,285 @@
+.duplicate-manager {
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 2rem;
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.duplicate-header {
+  margin-bottom: 2rem;
+  padding-bottom: 1rem;
+  border-bottom: 2px solid #f0f0f0;
+}
+
+.duplicate-header h2 {
+  color: #2c3e50;
+  margin-bottom: 1rem;
+}
+
+.current-location {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+  padding: 1rem;
+  background: #f8f9fa;
+  border-radius: 4px;
+}
+
+.current-location p {
+  margin: 0;
+  color: #2c3e50;
+  font-weight: 500;
+}
+
+.current-location .nav-button {
+  padding: 0.5rem 1rem;
+  background: #0078d4;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  transition: background-color 0.3s ease;
+}
+
+.current-location .nav-button:hover {
+  background: #106ebe;
+}
+
+.detection-methods {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  align-items: center;
+}
+
+.detection-methods h3 {
+  margin: 0;
+  color: #34495e;
+  font-size: 1rem;
+}
+
+.method-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  padding: 0.5rem;
+  border-radius: 4px;
+  background: #f8f9fa;
+  transition: background-color 0.3s ease;
+}
+
+.method-checkbox:hover {
+  background: #e9ecef;
+}
+
+.method-checkbox input[type="checkbox"] {
+  margin: 0;
+}
+
+.duplicate-stats {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 2rem;
+  padding: 1rem;
+  background: #f8f9fa;
+  border-radius: 4px;
+}
+
+.duplicate-stats p {
+  margin: 0;
+  color: #2c3e50;
+  font-weight: 500;
+}
+
+.delete-button {
+  padding: 0.75rem 1.5rem;
+  background-color: #dc3545;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: 500;
+  transition: background-color 0.3s ease;
+}
+
+.delete-button:hover {
+  background-color: #c82333;
+}
+
+.duplicate-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+}
+
+.duplicate-group {
+  border: 1px solid #e9ecef;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.group-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem;
+  background: #f8f9fa;
+  border-bottom: 1px solid #e9ecef;
+}
+
+.group-info h3 {
+  margin: 0 0 0.5rem 0;
+  color: #2c3e50;
+  font-size: 1.2rem;
+}
+
+.group-info p {
+  margin: 0.25rem 0;
+  color: #6c757d;
+  font-size: 0.9rem;
+}
+
+.group-select {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  font-weight: 500;
+  color: #2c3e50;
+}
+
+.group-select input[type="checkbox"] {
+  margin: 0;
+}
+
+.file-list {
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.file-item {
+  display: flex;
+  align-items: center;
+  padding: 1rem;
+  border-bottom: 1px solid #f0f0f0;
+  transition: background-color 0.3s ease;
+}
+
+.file-item:hover {
+  background: #f8f9fa;
+}
+
+.file-item:last-child {
+  border-bottom: none;
+}
+
+.file-select {
+  display: flex;
+  align-items: center;
+  margin-right: 1rem;
+}
+
+.file-select input[type="checkbox"] {
+  margin: 0;
+  transform: scale(1.2);
+}
+
+.file-info {
+  display: flex;
+  flex: 1;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.file-name {
+  font-weight: 500;
+  color: #2c3e50;
+  flex: 1;
+  margin-right: 1rem;
+}
+
+.file-size {
+  color: #6c757d;
+  font-size: 0.9rem;
+  margin-right: 1rem;
+  min-width: 80px;
+  text-align: right;
+}
+
+.file-date {
+  color: #6c757d;
+  font-size: 0.9rem;
+  min-width: 100px;
+  text-align: right;
+}
+
+.no-duplicates {
+  text-align: center;
+  padding: 3rem;
+  color: #6c757d;
+}
+
+.scanning-indicator {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 3rem;
+  color: #6c757d;
+}
+
+.spinner {
+  width: 40px;
+  height: 40px;
+  border: 4px solid #f3f3f3;
+  border-top: 4px solid #0078d4;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin-bottom: 1rem;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+@media (max-width: 768px) {
+  .duplicate-manager {
+    padding: 1rem;
+  }
+
+  .duplicate-stats {
+    flex-direction: column;
+    gap: 1rem;
+    text-align: center;
+  }
+
+  .group-header {
+    flex-direction: column;
+    gap: 1rem;
+    align-items: flex-start;
+  }
+
+  .file-info {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5rem;
+  }
+
+  .file-name {
+    margin-right: 0;
+  }
+
+  .file-size,
+  .file-date {
+    margin-right: 0;
+    text-align: left;
+  }
+} 

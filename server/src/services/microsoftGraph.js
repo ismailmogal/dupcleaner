@@ -32,7 +32,9 @@ class MicrosoftGraphService {
       }
     };
 
+    console.log('🔧 MSAL Config created with authority:', this.msalConfig.auth.authority);
     this.msalClient = new ConfidentialClientApplication(this.msalConfig);
+    console.log('✅ MSAL Client initialized successfully');
   }
 
   // Get access token using authorization code

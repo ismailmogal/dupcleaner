@@ -5,6 +5,7 @@ require('dotenv').config();
 // Import services
 const microsoftGraphService = require('./services/microsoftGraph');
 const duplicateDetector = require('./services/duplicateDetector');
+const aiDuplicateDetector = require('./services/aiDuplicateDetector');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -31,9 +32,21 @@ app.use((req, res, next) => {
 app.use(express.json({ type: ['application/json', 'text/plain'] }));
 app.use(express.urlencoded({ extended: true }));
 
+// DEBUG logging helper
+function debugLog(...args) {
+  if (process.env.DEBUG) {
+    console.log(...args);
+  }
+}
+function debugError(...args) {
+  if (process.env.DEBUG) {
+    console.error(...args);
+  }
+}
+
 // Basic logging middleware
 app.use((req, res, next) => {
-  console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
+  debugLog(`${new Date().toISOString()} - ${req.method} ${req.path}`);
   next();
 });
 
@@ -121,7 +134,7 @@ app.post('/api/duplicates', async (req, res) => {
       return res.status(401).json({ error: 'Access token required' });
     }
 
-    console.log(`Starting duplicate detection with method: ${method}`);
+    debugLog(`Starting duplicate detection with method: ${method}`);
     
     const results = await duplicateDetector.findDuplicates(
       files, 
@@ -132,7 +145,7 @@ app.post('/api/duplicates', async (req, res) => {
 
     res.json(results);
   } catch (error) {
-    console.error('Error detecting duplicates:', error);
+    debugError('Error detecting duplicates:', error);
     res.status(500).json({ 
       error: 'Failed to detect duplicates',
       message: error.message 
@@ -154,13 +167,13 @@ app.delete('/api/files', async (req, res) => {
       return res.status(401).json({ error: 'Access token required' });
     }
 
-    console.log(`Deleting ${fileIds.length} files...`);
+    debugLog(`Deleting ${fileIds.length} files...`);
     
     const results = await microsoftGraphService.deleteFiles(accessToken, fileIds);
     
     res.json(results);
   } catch (error) {
-    console.error('Error deleting files:', error);
+    debugError('Error deleting files:', error);
     res.status(500).json({ 
       error: 'Failed to delete files',
       message: error.message 
@@ -186,7 +199,7 @@ app.post('/api/auth/login', async (req, res) => {
       success: true
     });
   } catch (error) {
-    console.error('Error in Microsoft authentication:', error);
+    debugError('Error in Microsoft authentication:', error);
     res.status(500).json({ 
       error: 'Authentication failed',
       message: error.message 
@@ -194,9 +207,32 @@ app.post('/api/auth/login', async (req, res) => {
   }
 });
 
+// AI-powered duplicate detection endpoint
+app.post('/api/ai-duplicates', async (req, res) => {
+  try {
+    const { files } = req.body;
+    const accessToken = req.headers.authorization?.replace('Bearer ', '');
+    if (!files || !Array.isArray(files)) {
+      return res.status(400).json({ error: 'Files array is required' });
+    }
+    if (!accessToken) {
+      return res.status(401).json({ error: 'Access token required' });
+    }
+    // Helper to get file content from OneDrive
+    const getFileContent = async (fileId) => {
+      return await microsoftGraphService.getFileContent(accessToken, fileId);
+    };
+    const results = await aiDuplicateDetector.findAIDuplicates(files, getFileContent);
+    res.json({ results });
+  } catch (error) {
+    debugError('Error in AI duplicate detection:', error);
+    res.status(500).json({ error: 'Failed to detect AI duplicates', message: error.message });
+  }
+});
+
 // Error handling middleware
 app.use((err, req, res, next) => {
-  console.error('Error:', err);
+  debugError('Error:', err);
   res.status(500).json({ 
     error: 'Internal server error',
     message: process.env.NODE_ENV === 'development' ? err.message : 'Something went wrong'
@@ -210,10 +246,10 @@ app.use('*', (req, res) => {
 
 // Start server
 app.listen(PORT, () => {
-  console.log(`🚀 BFF Server running on port ${PORT}`);
-  console.log(`📊 Health check: http://localhost:${PORT}/api/health`);
-  console.log(`🔗 Client URL: ${process.env.CLIENT_URL || 'http://localhost:3000'}`);
-  console.log(`🔧 Microsoft Graph: ${microsoftGraphService.isConfigured ? 'Configured' : 'Mock Mode'}`);
+  debugLog(`🚀 BFF Server running on port ${PORT}`);
+  debugLog(`📊 Health check: http://localhost:${PORT}/api/health`);
+  debugLog(`🔗 Client URL: ${process.env.CLIENT_URL || 'http://localhost:3000'}`);
+  debugLog(`🔧 Microsoft Graph: ${microsoftGraphService.isConfigured ? 'Configured' : 'Mock Mode'}`);
 });
 
 module.exports = app; 

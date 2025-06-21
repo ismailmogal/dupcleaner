@@ -1,10 +1,10 @@
-import React, { useState, useEffect, useCallback, useMemo, useImperativeHandle, forwardRef } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useImperativeHandle, forwardRef, useRef } from 'react';
 import { DuplicateDetector } from '../utils/duplicateDetector';
 import FolderSelector from './FolderSelector';
 import { analytics } from './Analytics';
 import './MultiFolderDuplicateManager.css';
 import { mfSet, mfGet, mfRemove } from '../utils/idbMultiFolder';
-import { debugLog, debugWarn, debugError } from '../utils/idbState';
+import { debugLog, debugWarn, debugError, idbGet, idbRemove } from '../utils/idbState';
 
 // Helper: Run async tasks in parallel with a concurrency limit
 async function runWithConcurrencyLimit(tasks, limit = 5) {
@@ -29,8 +29,24 @@ async function runWithConcurrencyLimit(tasks, limit = 5) {
   return Promise.allSettled(results);
 }
 
+// Helper to map file extension/type to logical type
+function getLogicalFileType(item) {
+  if (item.folder) return 'folder';
+  const ext = item.name.split('.').pop()?.toLowerCase();
+  if (["jpg","jpeg","png","gif","bmp","webp","tiff"].includes(ext)) return 'image';
+  if (["mp4","avi","mov","wmv","mkv","webm"].includes(ext)) return 'video';
+  if (["mp3","wav","flac","aac","ogg"].includes(ext)) return 'audio';
+  if (["pdf"].includes(ext)) return 'pdf';
+  if (["doc","docx"].includes(ext)) return 'word';
+  if (["xls","xlsx"].includes(ext)) return 'excel';
+  if (["ppt","pptx"].includes(ext)) return 'powerpoint';
+  if (["zip","rar","7z","tar","gz"].includes(ext)) return 'compressed';
+  return 'other';
+}
+
 const MultiFolderDuplicateManager = forwardRef(({ onFetchFolderFiles, onDeleteFiles }, ref) => {
   const [selectedFolders, setSelectedFolders] = useState([]);
+  const addingFolderRef = useRef(new Set());
   const [folderFiles, setFolderFiles] = useState({}); // { folderId: { folder, files } }
   const [duplicateGroups, setDuplicateGroups] = useState([]);
   const [selectedFiles, setSelectedFiles] = useState(new Set());
@@ -156,61 +172,44 @@ const MultiFolderDuplicateManager = forwardRef(({ onFetchFolderFiles, onDeleteFi
     }
   }, [onFetchFolderFiles]);
 
-  // Load saved folder selections from IndexedDB
-  useEffect(() => {
-    (async () => {
-      const savedFolders = await mfGet('selectedFolders');
-      if (savedFolders) {
-        setSelectedFolders(savedFolders);
-        // Load files for saved folders
-        savedFolders.forEach(folder => {
-          loadFolderFilesRecursively(folder);
-        });
-      }
-    })();
-  }, []);
-
-  // Save folder selections to IndexedDB whenever they change
-  useEffect(() => {
-    mfSet('selectedFolders', selectedFolders);
-  }, [selectedFolders]);
-
   // Check for pending folders from IndexedDB
   useEffect(() => {
     (async () => {
-      const pendingFolders = await mfGet('pendingComparisonFolders');
+      const pendingFolders = await idbGet('pendingComparisonFolders');
       if (pendingFolders && Array.isArray(pendingFolders) && pendingFolders.length > 0) {
         // Deduplicate: only add folders not already selected
         const toAdd = pendingFolders.filter(folder => !selectedFolders.find(f => f.id === folder.id));
         for (const folder of toAdd) {
           await addFolder(folder);
         }
-        await mfRemove('pendingComparisonFolders');
+        await idbRemove('pendingComparisonFolders');
       }
     })();
   }, [selectedFolders]);
 
-  const addFolder = async (folder) => {
-    console.log('MultiFolderDuplicateManager addFolder called with:', folder);
-    
+  const addFolder = async (folder, fileTypeFilters = []) => {
     if (selectedFolders.find(f => f.id === folder.id)) {
-      console.log('Folder already selected, skipping...');
-      return; // Folder already selected
+      return; // Already selected
+    }
+    if (addingFolderRef.current.has(folder.id)) {
+      return; // Addition already in progress
     }
 
-    console.log('Adding folder to selection...');
-    setIsLoadingFolders(true);
-    setScanProgress({ current: 0, total: 1, folderName: folder.name });
-    
     try {
-      console.log('Loading folder files recursively...');
-      const allFiles = await loadFolderFilesRecursively(folder);
-      console.log('Loaded files:', allFiles.length);
-      
+      addingFolderRef.current.add(folder.id);
+      setIsLoadingFolders(true);
+      setScanProgress({ current: 0, total: 1, folderName: folder.name });
+
+      let allFiles = await loadFolderFilesRecursively(folder);
+      if (fileTypeFilters && fileTypeFilters.length > 0) {
+        allFiles = allFiles.filter(f => fileTypeFilters.includes(getLogicalFileType(f)));
+      }
+
       setSelectedFolders(prev => {
-        const newFolders = [...prev, folder];
-        console.log('Updated selected folders:', newFolders.length);
-        return newFolders;
+        if (prev.some(f => f.id === folder.id)) {
+            return prev;
+        }
+        return [...prev, folder];
       });
       
       setFolderFiles(prev => ({
@@ -218,17 +217,17 @@ const MultiFolderDuplicateManager = forwardRef(({ onFetchFolderFiles, onDeleteFi
         [folder.id]: { 
           folder, 
           files: allFiles,
-          totalFiles: allFiles.length
+          totalFiles: allFiles.length,
+          fileTypeFilters
         }
       }));
-      
-      console.log('Folder added successfully');
     } catch (error) {
       console.error('Error loading folder:', error);
       alert(`Failed to load folder: ${error.message}`);
     } finally {
       setIsLoadingFolders(false);
       setScanProgress({ current: 0, total: 0, folderName: '' });
+      addingFolderRef.current.delete(folder.id);
     }
   };
 
@@ -236,19 +235,19 @@ const MultiFolderDuplicateManager = forwardRef(({ onFetchFolderFiles, onDeleteFi
   useImperativeHandle(ref, () => ({
     addFolder,
     checkPendingFolders: async () => {
-      const pendingFolders = await mfGet('pendingComparisonFolders');
+      const pendingFolders = await idbGet('pendingComparisonFolders');
       if (pendingFolders && Array.isArray(pendingFolders) && pendingFolders.length > 0) {
         const toAdd = pendingFolders.filter(folder => !selectedFolders.find(f => f.id === folder.id));
         for (const folder of toAdd) {
           await addFolder(folder);
         }
-        await mfRemove('pendingComparisonFolders');
+        await idbRemove('pendingComparisonFolders');
       }
     }
   }));
 
-  const handleFolderSelect = (folder) => {
-    addFolder(folder);
+  const handleFolderSelect = (folder, fileTypeFilters) => {
+    addFolder(folder, fileTypeFilters);
   };
 
   const removeFolder = (folderId) => {
@@ -864,25 +863,24 @@ const MultiFolderDuplicateManager = forwardRef(({ onFetchFolderFiles, onDeleteFi
           fileName: 'Refreshing folders...' 
         });
         
-        const refreshPromises = selectedFolders.map(async (folder) => {
-          try {
-            const allFiles = await loadFolderFilesRecursively(folder);
+        const refreshPromises = selectedFolders.map(folder => {
+          return loadFolderFilesRecursively(folder).then(allFiles => {
             setFolderFiles(prev => ({
               ...prev,
               [folder.id]: { 
-                folder, 
+                ...prev[folder.id],
                 files: allFiles,
                 totalFiles: allFiles.length
               }
             }));
-          } catch (error) {
+          }).catch(error => {
             console.error('Error refreshing folder:', error);
-          }
+        });
         });
         
         await Promise.all(refreshPromises);
         
-        // Refresh the page to show updated data
+        // NOW it's safe to reload
         window.location.reload();
         
       } catch (error) {
@@ -1389,14 +1387,14 @@ const MultiFolderDuplicateManager = forwardRef(({ onFetchFolderFiles, onDeleteFi
                       )}
                     </div>
                     <label className="group-select">
-                      <input
+              <input
                         type="checkbox"
                         checked={group.files.every(file => selectedFiles.has(file.id))}
                         onChange={(e) => handleGroupSelection(groupIndex, e.target.checked)}
                       />
                       Select All
                     </label>
-                  </div>
+            </div>
                   
                   {/* Sortable Column Headers */}
                   <div className="file-list-header sticky-col">
@@ -1447,7 +1445,7 @@ Depth: ${file.depth} levels deep`}
                         <div className="file-cell file-depth">{file.depth}</div>
                         <div className="file-cell file-select">
                           <label className="file-select-label">
-                            <input
+                    <input
                               type="checkbox"
                               checked={selectedFiles.has(file.id)}
                               onChange={(e) => handleFileSelection(file.id, e.target.checked)}

@@ -270,33 +270,125 @@
 }
 
 /* Dark theme support */
-@media (prefers-color-scheme: dark) {
-  .folder-selector {
-    background: #2d3748;
+.dark .folder-selector {
+  background: #1a202c; /* Darker background */
+  color: #e2e8f0;
+  border: 1px solid #4a5568;
+}
+
+.dark .selector-header {
+  background: #2d3748; /* Header background */
+  border-bottom-color: #4a5568;
+}
+
+.dark .selector-header h3 {
     color: #e2e8f0;
   }
   
-  .selector-header {
-    background: #4a5568;
-    border-bottom-color: #718096;
+.dark .selector-breadcrumbs {
+  color: #a0aec0;
   }
   
-  .selector-header h3 {
+.dark .selector-filters label {
     color: #e2e8f0;
   }
   
-  .reset-size-btn,
-  .close-button {
+.dark .selector-filters select {
+  background: #2d3748;
+  color: #e2e8f0;
+  border: 1px solid #4a5568;
+}
+
+.dark .selector-content {
+  background: #1a202c;
+}
+
+/* Make grid container transparent, but rows will have their own background */
+.dark .selector-content > div[style*="overflow-x: auto"] {
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.dark .reset-size-btn,
+.dark .close-button {
     color: #a0aec0;
   }
   
-  .reset-size-btn:hover {
+.dark .reset-size-btn:hover {
     color: #63b3ed;
-    background: #2c5282;
+  background: #4a5568;
   }
   
-  .close-button:hover {
+.dark .close-button:hover {
     color: #fc8181;
-    background: #742a2a;
+  background: #c53030;
+}
+
+.selector-controls {
+  display: flex;
+  gap: 1.5rem;
+  padding: 1rem 1.5rem;
+  background-color: #f7faff;
+  border-bottom: 1px solid #e9ecef;
+  border-top: 1px solid #e9ecef;
+  align-items: flex-start;
+}
+
+.filter-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.filter-group label {
+  font-weight: 600;
+  color: #495057;
+  font-size: 0.9rem;
+}
+
+.filter-group select {
+  min-width: 220px;
+  padding: 0.5rem;
+  border-radius: 6px;
+  border: 1px solid #ced4da;
+  font-size: 0.95rem;
+}
+
+.filter-hint {
+  font-size: 0.8rem;
+  color: #6c757d;
+}
+
+.folder-filter-input {
+  min-width: 220px;
+  padding: 0.5rem;
+  border-radius: 6px;
+  border: 1px solid #ccc;
+  font-size: 0.95rem;
   }
+
+.dark .selector-controls {
+  background-color: #2d3748;
+  border-bottom-color: #4a5568;
+  border-top-color: #4a5568;
+}
+
+.dark .filter-group label {
+  color: #a0aec0;
+}
+
+.dark .filter-group select {
+  background: #1a202c;
+  color: #e2e8f0;
+  border: 1px solid #4a5568;
+}
+
+.dark .filter-hint {
+  color: #718096;
+}
+
+.dark .folder-filter-input {
+  background: #1a202c;
+  color: #e2e8f0;
+  border: 1px solid #4a5568;
 } 

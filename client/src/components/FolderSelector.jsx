@@ -1,8 +1,23 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useTheme } from '../contexts/ThemeContext';
 import FileBrowser from './FileBrowser';
 import './FolderSelector.css';
 import { idbSet, idbGet } from '../utils/idbState';
+import FileExplorerGrid from './FileExplorerGrid';
+import { formatFileSize, getFileIcon, getFileType } from '../utils/fileUtils';
+
+// File type options for filtering
+const FILE_TYPE_OPTIONS = [
+  { value: 'image', label: 'Image' },
+  { value: 'video', label: 'Video' },
+  { value: 'audio', label: 'Audio' },
+  { value: 'pdf', label: 'PDF Document' },
+  { value: 'word', label: 'Word Document' },
+  { value: 'excel', label: 'Excel Spreadsheet' },
+  { value: 'powerpoint', label: 'PowerPoint Presentation' },
+  { value: 'compressed', label: 'Compressed Folder' },
+  { value: 'other', label: 'Other' },
+];
 
 function FolderSelector({ onFetchFolderFiles, onFolderSelect, onClose }) {
   const { userPreferences } = useTheme();
@@ -10,12 +25,28 @@ function FolderSelector({ onFetchFolderFiles, onFolderSelect, onClose }) {
   const [folderPath, setFolderPath] = useState([]);
   const [files, setFiles] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [folderFilter, setFolderFilter] = useState('');
   const [isResizing, setIsResizing] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [modalSize, setModalSize] = useState({ width: 1000, height: 700 });
   const [modalPosition, setModalPosition] = useState({ x: 0, y: 0 });
+  const [selectedFileTypes, setSelectedFileTypes] = useState([]);
   const modalRef = useRef(null);
   const resizeRef = useRef(null);
+
+  const gridData = useMemo(() => {
+    const folderItems = files
+      .filter(item => item.folder)
+      .filter(item => item.name.toLowerCase().includes(folderFilter.toLowerCase()));
+
+    return folderItems.map(item => ({
+      ...item,
+      icon: getFileIcon(item),
+      type: getFileType(item),
+      size: `${item.folder.childCount || 0} items`,
+      date: new Date(item.lastModifiedDateTime).toLocaleDateString(),
+    }));
+  }, [files, folderFilter]);
 
   // Load saved modal size from IDB
   const loadSavedSize = useCallback(async () => {
@@ -86,7 +117,7 @@ function FolderSelector({ onFetchFolderFiles, onFolderSelect, onClose }) {
   useEffect(() => {
     (async () => {
       const savedSize = await loadSavedSize();
-      setModalSize(savedSize);
+    setModalSize(savedSize);
       const savedPos = await loadSavedPosition();
       setModalPosition(savedPos);
     })();
@@ -252,8 +283,17 @@ function FolderSelector({ onFetchFolderFiles, onFolderSelect, onClose }) {
     }
   };
 
+  const handleFileTypeChange = (e) => {
+    const { options } = e.target;
+    const values = [];
+    for (let i = 0; i < options.length; i++) {
+      if (options[i].selected) values.push(options[i].value);
+    }
+    setSelectedFileTypes(values);
+  };
+
   const handleFolderSelect = (folder) => {
-    onFolderSelect(folder);
+    onFolderSelect(folder, selectedFileTypes);
     onClose();
   };
 
@@ -322,20 +362,43 @@ function FolderSelector({ onFetchFolderFiles, onFolderSelect, onClose }) {
           <button className="close-button" onClick={handleClose}>×</button>
           </div>
         </div>
+        <div className="selector-breadcrumbs" style={{margin:'1rem 0',fontSize:'1.1rem'}}>
+          {folderPath.map((folder, idx) => (
+            <span key={folder.id} style={{cursor: idx < folderPath.length-1 ? 'pointer' : 'default',color: idx < folderPath.length-1 ? '#2563eb' : '#222'}} onClick={() => idx < folderPath.length-1 && handleBreadcrumbClick(idx)}>
+              {folder.name}
+              {idx < folderPath.length-1 && <span style={{margin:'0 0.5rem'}}>/</span>}
+            </span>
+          ))}
+        </div>
+
+        <div className="selector-controls">
+          <div className="filter-group">
+            <label htmlFor="file-type-select">File Types to Scan:</label>
+            <select id="file-type-select" multiple value={selectedFileTypes} onChange={handleFileTypeChange}>
+              {FILE_TYPE_OPTIONS.map(opt => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
+            <span className="filter-hint">Hold Ctrl/Cmd to select multiple</span>
+          </div>
+          <div className="filter-group">
+            <label htmlFor="folder-search-input">Search Folders:</label>
+            <input
+              id="folder-search-input"
+              type="text"
+              placeholder="Filter displayed folders..."
+              value={folderFilter}
+              onChange={(e) => setFolderFilter(e.target.value)}
+              className="folder-filter-input"
+            />
+          </div>
+        </div>
+
         <div className="selector-content">
-          <FileBrowser 
-            files={files}
-            currentFolder={currentFolder}
-            folderPath={folderPath}
-            onFolderClick={handleFolderClick}
-            onBreadcrumbClick={handleBreadcrumbClick}
-            onFileSelect={() => {}}
-            selectedFiles={new Set()}
+          <FileExplorerGrid
+            data={gridData}
             onAddToComparison={handleFolderSelect}
-            defaultViewMode={userPreferences.fileBrowserViewMode}
-            showFileSizes={userPreferences.showFileSizes}
-            showFileDates={userPreferences.showFileDates}
-            compactMode={userPreferences.compactMode}
+            onRowClick={(row) => handleFolderClick(row.original)}
           />
         </div>
         <div 

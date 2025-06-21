@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback, Suspense, lazy } from 'react';
+import React, { useState, useEffect, useRef, useCallback, Suspense, lazy, useMemo } from 'react';
 import { PublicClientApplication, EventType } from '@azure/msal-browser';
 import { ThemeProvider, useTheme } from './contexts/ThemeContext';
 import TermsOfService from './components/TermsOfService';
@@ -15,6 +15,8 @@ import './App.css';
 import './styles/themes.css';
 import { idbSet, idbGet, idbSetCache, idbGetCache, idbRemove } from './utils/idbState';
 import { msalIdbCachePlugin } from './utils/msalIdbCache';
+import FileExplorerGrid from './components/FileExplorerGrid';
+import { formatFileSize, getFileIcon, getFileType } from './utils/fileUtils';
 
 // Lazy load heavy components
 const DuplicateManager = lazy(() => import('./components/DuplicateManager'));
@@ -38,54 +40,30 @@ const msalConfig = {
     cachePlugin: msalIdbCachePlugin,
   },
   system: {
-    allowNativeBroker: false,
-    loggerOptions: {
-      loggerCallback: (level, message, containsPii) => {
-        if (containsPii) {
-          return;
-        }
-        switch (level) {
-          case 0:
-            console.error(message);
-            return;
-          case 1:
-            console.warn(message);
-            return;
-          case 2:
-            console.info(message);
-            return;
-          case 3:
-            console.debug(message);
-            return;
-          default:
-            return;
-        }
-      },
-      piiLoggingEnabled: false,
-      logLevel: 3,
-    }
+    // ... logger config ...
   }
 };
 
-// Create MSAL instance
 const msalInstance = new PublicClientApplication(msalConfig);
 
 function AppContent() {
+  const { theme, setTheme } = useTheme();
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [files, setFiles] = useState([]);
-  const [currentFolder, setCurrentFolder] = useState(null);
-  const [folderPath, setFolderPath] = useState([]);
+  const [currentFolder, setCurrentFolder] = useState({ id: 'root', name: 'OneDrive' });
+  const [folderPath, setFolderPath] = useState([{ id: 'root', name: 'OneDrive' }]);
+  const [selectedFiles, setSelectedFiles] = useState(new Set());
   const [error, setError] = useState(null);
   const [isInitialized, setIsInitialized] = useState(false);
-  const [currentPage, setCurrentPage] = useState('home');
-  const [selectedFiles, setSelectedFiles] = useState(new Set());
-  const multiFolderManagerRef = useRef(null);
+  const [currentPage, setCurrentPage] = useState('browser');
+  const [globalFilter, setGlobalFilter] = useState('');
   const [notification, setNotification] = useState(null);
   const [showPreferences, setShowPreferences] = useState(false);
   const [helloMessage, setHelloMessage] = useState('');
   const [aiDetectionResults, setAiDetectionResults] = useState([]);
   const [aiDetectionLoading, setAiDetectionLoading] = useState(false);
   const [aiDetectionError, setAiDetectionError] = useState(null);
+  const multiFolderManagerRef = useRef(null);
   
   const { userPreferences } = useTheme();
 
@@ -129,7 +107,6 @@ function AppContent() {
         await msalInstance.initialize();
         setIsInitialized(true);
 
-        // Check if user is already signed in
         const accounts = msalInstance.getAllAccounts();
         if (accounts.length > 0) {
           msalInstance.setActiveAccount(accounts[0]);
@@ -137,15 +114,12 @@ function AppContent() {
           fetchFiles();
         }
 
-        // Add event callback for handling redirect
         const callbackId = msalInstance.addEventCallback((event) => {
           if (event.eventType === EventType.LOGIN_SUCCESS) {
-            const accounts = msalInstance.getAllAccounts();
-            if (accounts.length > 0) {
-              msalInstance.setActiveAccount(accounts[0]);
-              setIsAuthenticated(true);
-              fetchFiles();
-            }
+            const account = event.payload.account;
+            msalInstance.setActiveAccount(account);
+            setIsAuthenticated(true);
+            fetchFiles();
           }
         });
 
@@ -159,18 +133,8 @@ function AppContent() {
         setError('Failed to initialize authentication: ' + error.message);
       }
     };
-
     initializeMsal();
   }, [fetchFiles]);
-
-  useEffect(() => {
-    // Restore session from MSAL IndexedDB cache on refresh
-    const accounts = msalInstance.getAllAccounts();
-    if (accounts && accounts.length > 0) {
-      msalInstance.setActiveAccount(accounts[0]);
-      setIsAuthenticated(true);
-    }
-  }, []);
 
   const handleFolderClick = async (folder) => {
     // Clear selected files when navigating
@@ -322,16 +286,32 @@ function AppContent() {
 
   // Helper to get all folder cache keys
   async function idbGetAllFolderCacheKeys() {
-    const db = await (await window.indexedDB.open('ODDupAppState', 1)).result;
     return new Promise((resolve, reject) => {
-      const tx = db.transaction('state', 'readonly');
-      const store = tx.objectStore('state');
-      const keysReq = store.getAllKeys();
-      keysReq.onsuccess = () => {
-        const folderKeys = keysReq.result.filter(k => typeof k === 'string' && k.startsWith('folder_'));
-        resolve(folderKeys);
+      const openRequest = window.indexedDB.open('ODDupAppState', 1);
+      
+      openRequest.onerror = () => {
+        reject(new Error('Error opening IndexedDB'));
       };
-      keysReq.onerror = () => reject(keysReq.error);
+      
+      openRequest.onsuccess = () => {
+        const db = openRequest.result;
+        try {
+          const tx = db.transaction('state', 'readonly');
+          const store = tx.objectStore('state');
+          const keysReq = store.getAllKeys();
+          
+          keysReq.onsuccess = () => {
+            const folderKeys = keysReq.result.filter(k => typeof k === 'string' && k.startsWith('folder_'));
+            resolve(folderKeys);
+          };
+          
+          keysReq.onerror = () => {
+            reject(keysReq.error);
+          };
+        } catch (error) {
+          reject(error);
+        }
+      };
     });
   }
 
@@ -360,19 +340,23 @@ function AppContent() {
     }
   };
 
-  const handleAddToComparison = (folder) => {
-    console.log('handleAddToComparison called with folder:', folder);
-    console.log('multiFolderManagerRef.current:', multiFolderManagerRef.current);
-    console.log('currentPage:', currentPage);
-    
-    // Store the folder in localStorage for cross-page communication
-    const pendingFolders = JSON.parse(localStorage.getItem('pendingComparisonFolders') || '[]');
-    const folderExists = pendingFolders.find(f => f.id === folder.id);
-    
-    if (!folderExists) {
-      pendingFolders.push(folder);
-      localStorage.setItem('pendingComparisonFolders', JSON.stringify(pendingFolders));
-      console.log('Added folder to pending list:', pendingFolders.length);
+  const handleAddToComparison = async (folder) => {
+    try {
+      // Use IndexedDB instead of localStorage
+      const pendingFolders = await idbGet('pendingComparisonFolders') || [];
+      const folderExists = pendingFolders.find(f => f.id === folder.id);
+
+      if (!folderExists) {
+        pendingFolders.push(folder);
+        await idbSet('pendingComparisonFolders', pendingFolders);
+        console.log('Added folder to pending list in IndexedDB:', pendingFolders.length);
+      }
+    } catch (error) {
+      console.error('Failed to add folder to comparison via IndexedDB', error);
+      // Fallback or error notification
+      setNotification('Error: Could not add folder to comparison.');
+      setTimeout(() => setNotification(null), 3000);
+      return; // Stop execution
     }
     
     if (multiFolderManagerRef.current && multiFolderManagerRef.current.addFolder) {
@@ -544,6 +528,16 @@ function AppContent() {
       setAiDetectionLoading(false);
     }
   };
+
+  const gridData = useMemo(() => {
+    return files.map(item => ({
+      ...item,
+      icon: getFileIcon(item),
+      type: getFileType(item),
+      size: item.folder ? `${item.folder.childCount || 0} items` : formatFileSize(item.size),
+      date: new Date(item.lastModifiedDateTime).toLocaleDateString(),
+    }));
+  }, [files]);
 
   const renderContent = () => {
     if (!isAuthenticated) {
@@ -722,22 +716,29 @@ function AppContent() {
 
       case 'browser':
         return (
-          <Suspense fallback={<LoadingSpinner />}>
-            <FileBrowser 
-              files={files}
-              currentFolder={currentFolder}
-              folderPath={folderPath}
-              onFolderClick={handleFolderClick}
-              onBreadcrumbClick={handleBreadcrumbClick}
-              onFileSelect={handleFileSelect}
-              selectedFiles={selectedFiles}
+          <div>
+            <h2>File Browser</h2>
+            <div className="browser-controls" style={{ marginBottom: '1rem' }}>
+              <input
+                type="text"
+                value={globalFilter}
+                onChange={(e) => setGlobalFilter(e.target.value)}
+                placeholder="Search by name..."
+                style={{ padding: '0.5rem', minWidth: '300px', borderRadius: '6px', border: '1px solid #ccc' }}
+              />
+            </div>
+            <FileExplorerGrid
+              data={gridData}
+              onRowClick={(row) => {
+                if (row.original.folder) {
+                  handleFolderClick(row.original);
+                }
+              }}
               onAddToComparison={handleAddToComparison}
-              defaultViewMode={userPreferences.fileBrowserViewMode}
-              showFileSizes={userPreferences.showFileSizes}
-              showFileDates={userPreferences.showFileDates}
-              compactMode={userPreferences.compactMode}
+              globalFilter={globalFilter}
+              setGlobalFilter={setGlobalFilter}
             />
-          </Suspense>
+          </div>
         );
 
       case 'terms':
@@ -851,32 +852,6 @@ function AppContent() {
             {notification}
           </div>
         )}
-        <div style={{ margin: '1rem 0', padding: '1rem', background: '#f8f9fa', borderRadius: 8 }}>
-          <h4 style={{ margin: '0 0 1rem 0', color: '#333' }}>BFF Backend Testing</h4>
-          <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
-            <button onClick={callHelloApi} style={{ padding: '0.5rem 1rem', fontWeight: 600, borderRadius: 4, border: '1px solid #0078d4', background: '#0078d4', color: 'white', cursor: 'pointer' }}>
-              Test Hello API
-            </button>
-            <button onClick={checkHealth} style={{ padding: '0.5rem 1rem', fontWeight: 600, borderRadius: 4, border: '1px solid #28a745', background: '#28a745', color: 'white', cursor: 'pointer' }}>
-              Check Health
-            </button>
-            <button onClick={testUserInfo} style={{ padding: '0.5rem 1rem', fontWeight: 600, borderRadius: 4, border: '1px solid #28a745', background: '#28a745', color: 'white', cursor: 'pointer' }}>
-              Test User Info
-            </button>
-            <button onClick={testFiles} style={{ padding: '0.5rem 1rem', fontWeight: 600, borderRadius: 4, border: '1px solid #28a745', background: '#28a745', color: 'white', cursor: 'pointer' }}>
-              Test Files
-            </button>
-            <button onClick={testDuplicateDetection} style={{ padding: '0.5rem 1rem', fontWeight: 600, borderRadius: 4, border: '1px solid #28a745', background: '#28a745', color: 'white', cursor: 'pointer' }}>
-              Test Duplicate Detection
-            </button>
-            <button onClick={testDuplicateDetectionMock} style={{ padding: '0.5rem 1rem', fontWeight: 600, borderRadius: 4, border: '1px solid #ffc107', background: '#ffc107', color: 'black', cursor: 'pointer' }}>
-              Test Duplicates (Mock)
-            </button>
-          </div>
-          {helloMessage && (
-            <div style={{ marginTop: 8, color: '#1976d2', fontWeight: 500 }}>{helloMessage}</div>
-          )}
-        </div>
         </main>
       </header>
       

@@ -1154,4 +1154,12 @@
 .no-files-message p {
   margin-bottom: 1rem;
   font-size: 1.1rem;
+}
+
+.sticky-col {
+  position: sticky;
+  left: 0;
+  background: white;
+  z-index: 2;
+  box-shadow: 2px 0 4px -2px rgba(0,0,0,0.04);
 } 

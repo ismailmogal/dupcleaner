@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { DuplicateDetector } from '../utils/duplicateDetector';
+import { debugLog, debugWarn, debugError } from '../utils/idbState';
 import './DuplicateManager.css';
 
 function DuplicateManager({ files, onDeleteFiles, currentFolder, onFolderClick }) {
@@ -21,25 +22,25 @@ function DuplicateManager({ files, onDeleteFiles, currentFolder, onFolderClick }
     setIsScanning(true);
     
     try {
-      console.log('Starting duplicate scan with', files.length, 'files');
+      debugLog('Starting duplicate scan with', files.length, 'files');
       const methods = Object.keys(detectionMethods).filter(key => detectionMethods[key]);
-      console.log('Using detection methods:', methods);
+      debugLog('Using detection methods:', methods);
       
       if (files.length === 0) {
-        console.log('No files to scan');
+        debugLog('No files to scan');
         setDuplicateGroups([]);
         return;
       }
       
       // Log first few files to check structure
-      console.log('Sample files:', files.slice(0, 3));
+      debugLog('Sample files:', files.slice(0, 3));
       
       const groups = await detector.findAllDuplicates(files, methods);
-      console.log('Found duplicate groups:', groups.length);
-      console.log('Groups:', groups);
+      debugLog('Found duplicate groups:', groups.length);
+      debugLog('Groups:', groups);
       setDuplicateGroups(groups);
     } catch (error) {
-      console.error('Error scanning for duplicates:', error);
+      debugError('Error scanning for duplicates:', error);
       setDuplicateGroups([]);
     } finally {
       setIsScanning(false);
@@ -47,14 +48,14 @@ function DuplicateManager({ files, onDeleteFiles, currentFolder, onFolderClick }
   }, [files, detectionMethods, detector]);
 
   useEffect(() => {
-    console.log('DuplicateManager useEffect triggered');
-    console.log('Files length:', files.length);
-    console.log('Files:', files);
+    debugLog('DuplicateManager useEffect triggered');
+    debugLog('Files length:', files.length);
+    debugLog('Files:', files);
     
     if (files.length > 0) {
       scanForDuplicates();
     } else {
-      console.log('No files available, setting empty groups');
+      debugLog('No files available, setting empty groups');
       setDuplicateGroups([]);
     }
   }, [scanForDuplicates, files.length]);
@@ -123,7 +124,7 @@ function DuplicateManager({ files, onDeleteFiles, currentFolder, onFolderClick }
         window.location.reload();
         
       } catch (error) {
-        console.error('Error deleting files:', error);
+        debugError('Error deleting files:', error);
         alert(`Error deleting files: ${error.message}`);
       } finally {
         setIsDeleting(false);

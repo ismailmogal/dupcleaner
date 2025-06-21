@@ -163,6 +163,15 @@ function AppContent() {
     initializeMsal();
   }, [fetchFiles]);
 
+  useEffect(() => {
+    // Restore session from MSAL IndexedDB cache on refresh
+    const accounts = msalInstance.getAllAccounts();
+    if (accounts && accounts.length > 0) {
+      msalInstance.setActiveAccount(accounts[0]);
+      setIsAuthenticated(true);
+    }
+  }, []);
+
   const handleFolderClick = async (folder) => {
     // Clear selected files when navigating
     setSelectedFiles(new Set());

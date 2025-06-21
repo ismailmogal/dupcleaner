@@ -1,3 +1,5 @@
+import { debugError } from '../utils/idbState';
+
 const BFF_BASE_URL = import.meta.env.VITE_BFF_URL || 'http://localhost:3001';
 
 class BffApiService {
@@ -27,7 +29,7 @@ class BffApiService {
 
       return await response.json();
     } catch (error) {
-      console.error(`BFF API Error (${endpoint}):`, error);
+      debugError(`BFF API Error (${endpoint}):`, error);
       throw error;
     }
   }

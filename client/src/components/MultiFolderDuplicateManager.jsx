@@ -4,6 +4,7 @@ import FolderSelector from './FolderSelector';
 import { analytics } from './Analytics';
 import './MultiFolderDuplicateManager.css';
 import { mfSet, mfGet, mfRemove } from '../utils/idbMultiFolder';
+import { debugLog, debugWarn, debugError } from '../utils/idbState';
 
 // Helper: Run async tasks in parallel with a concurrency limit
 async function runWithConcurrencyLimit(tasks, limit = 5) {
@@ -1398,7 +1399,7 @@ const MultiFolderDuplicateManager = forwardRef(({ onFetchFolderFiles, onDeleteFi
                   </div>
                   
                   {/* Sortable Column Headers */}
-                  <div className="file-list-header">
+                  <div className="file-list-header sticky-col">
                     <div className="header-cell sortable" onClick={() => handleSort('name')}>
                       <span>File Name</span>
                       {sortBy === 'name' && <span className="sort-indicator">{sortOrder === 'asc' ? '↑' : '↓'}</span>}
@@ -1435,7 +1436,7 @@ Size: ${detector.formatFileSize(file.size)}
 Modified: ${new Date(file.lastModifiedDateTime).toLocaleString()}
 Depth: ${file.depth} levels deep`}
                       >
-                        <div className="file-cell file-name">{file.name}</div>
+                        <div className="file-cell file-name sticky-col">{file.name}</div>
                         <div className="file-cell file-folder" style={{ paddingLeft: `${file.depth * 20 + 8}px` }}>
                           📁 {file.fullPath}
                         </div>

@@ -38,6 +38,9 @@ VITE_MAX_FILE_SIZE=1000000000  # 1GB in bytes
 VITE_DEFAULT_THEME=auto
 VITE_ENABLE_ANIMATIONS=true
 VITE_ENABLE_KEYBOARD_SHORTCUTS=true
+
+# Optional: Debug Logging
+DEBUG=true  # Set to true to enable backend debug logs
 ```
 
 ---

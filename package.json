@@ -1,0 +1,8 @@
+{
+  "dependencies": {
+    "@azure/msal-browser": "^4.13.2",
+    "express": "^4.18.2",
+    "jimp": "^1.6.0",
+    "string-similarity": "^4.0.4"
+  }
+}

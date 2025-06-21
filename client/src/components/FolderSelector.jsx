@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useTheme } from '../contexts/ThemeContext';
 import FileBrowser from './FileBrowser';
 import './FolderSelector.css';
+import { idbSet, idbGet } from '../utils/idbState';
 
 function FolderSelector({ onFetchFolderFiles, onFolderSelect, onClose }) {
   const { userPreferences } = useTheme();
@@ -16,62 +17,80 @@ function FolderSelector({ onFetchFolderFiles, onFolderSelect, onClose }) {
   const modalRef = useRef(null);
   const resizeRef = useRef(null);
 
-  // Load saved modal size from localStorage
-  const loadSavedSize = useCallback(() => {
+  // Load saved modal size from IDB
+  const loadSavedSize = useCallback(async () => {
     try {
-      const savedSize = localStorage.getItem('folderSelector_size');
-      if (savedSize) {
-        const parsed = JSON.parse(savedSize);
-        return parsed;
-      }
+      const savedSize = await idbGet('folderSelector_size');
+      if (savedSize) return savedSize;
     } catch (error) {
       console.error('Error loading saved modal size:', error);
     }
     return { width: 1000, height: 700 };
   }, []);
 
-  // Save modal size to localStorage
-  const saveSize = useCallback((size) => {
+  // Save modal size to IDB
+  const saveSize = useCallback(async (size) => {
     try {
-      localStorage.setItem('folderSelector_size', JSON.stringify(size));
+      await idbSet('folderSelector_size', size);
     } catch (error) {
       console.error('Error saving modal size:', error);
     }
   }, []);
 
-  // Load saved folder navigation state from localStorage
-  const loadSavedState = useCallback(() => {
+  // Load saved modal position from IDB
+  const loadSavedPosition = useCallback(async () => {
     try {
-      const savedState = localStorage.getItem('folderSelector_state');
-      if (savedState) {
-        const parsed = JSON.parse(savedState);
-        return parsed;
-      }
+      const savedPos = await idbGet('folderSelector_position');
+      if (savedPos) return savedPos;
+    } catch (error) {
+      console.error('Error loading saved modal position:', error);
+    }
+    return { x: 0, y: 0 };
+  }, []);
+
+  // Save modal position to IDB
+  const savePosition = useCallback(async (pos) => {
+    try {
+      await idbSet('folderSelector_position', pos);
+    } catch (error) {
+      console.error('Error saving modal position:', error);
+    }
+  }, []);
+
+  // Load saved folder navigation state from IDB
+  const loadSavedState = useCallback(async () => {
+    try {
+      const savedState = await idbGet('folderSelector_state');
+      if (savedState) return savedState;
     } catch (error) {
       console.error('Error loading saved folder selector state:', error);
     }
     return null;
   }, []);
 
-  // Save folder navigation state to localStorage
-  const saveState = useCallback((folder, path) => {
+  // Save folder navigation state to IDB
+  const saveState = useCallback(async (folder, path) => {
     try {
       const state = {
         currentFolder: folder,
         folderPath: path,
         timestamp: Date.now()
       };
-      localStorage.setItem('folderSelector_state', JSON.stringify(state));
+      await idbSet('folderSelector_state', state);
     } catch (error) {
       console.error('Error saving folder selector state:', error);
     }
   }, []);
 
-  // Initialize modal size
+  // Initialize modal size and position
   useEffect(() => {
-    const savedSize = loadSavedSize();
-    setModalSize(savedSize);
-  }, [loadSavedSize]);
+    (async () => {
+      const savedSize = await loadSavedSize();
+      setModalSize(savedSize);
+      const savedPos = await loadSavedPosition();
+      setModalPosition(savedPos);
+    })();
+  }, [loadSavedSize, loadSavedPosition]);
 
   // Drag functionality
   const handleHeaderMouseDown = useCallback((e) => {

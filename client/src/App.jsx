@@ -9,9 +9,12 @@ import AnalyticsConsent from './components/AnalyticsConsent';
 import LoadingSpinner from './components/LoadingSpinner';
 import Footer from './components/Footer';
 import { analytics } from './components/Analytics';
+import bffApi from './services/bffApi';
 import logo from './logo.svg';
 import './App.css';
 import './styles/themes.css';
+import { idbSet, idbGet, idbSetCache, idbGetCache, idbRemove } from './utils/idbState';
+import { msalIdbCachePlugin } from './utils/msalIdbCache';
 
 // Lazy load heavy components
 const DuplicateManager = lazy(() => import('./components/DuplicateManager'));
@@ -30,8 +33,9 @@ const msalConfig = {
     postLogoutRedirectUri: window.location.origin,
   },
   cache: {
-    cacheLocation: 'sessionStorage',
+    cacheLocation: 'custom',
     storeAuthStateInCookie: false,
+    cachePlugin: msalIdbCachePlugin,
   },
   system: {
     allowNativeBroker: false,
@@ -78,92 +82,43 @@ function AppContent() {
   const multiFolderManagerRef = useRef(null);
   const [notification, setNotification] = useState(null);
   const [showPreferences, setShowPreferences] = useState(false);
+  const [helloMessage, setHelloMessage] = useState('');
+  const [aiDetectionResults, setAiDetectionResults] = useState([]);
+  const [aiDetectionLoading, setAiDetectionLoading] = useState(false);
+  const [aiDetectionError, setAiDetectionError] = useState(null);
   
   const { userPreferences } = useTheme();
 
+  const FOLDER_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
   const fetchFiles = useCallback(async (folderId = null) => {
+    setError(null);
+    const cacheKey = `folder_${folderId || 'root'}`;
     try {
+      // Try cache first
+      const cached = await idbGetCache(cacheKey);
+      if (cached) {
+        setFiles(cached);
+        return;
+      }
       const account = msalInstance.getActiveAccount();
       if (!account) {
-        throw new Error('No active account');
+        throw new Error('No active account. Please login to continue.');
       }
-
-      console.log('Fetching token for account:', account.username);
-
-      // Get access token with specific scopes for OneDrive
       const tokenResponse = await msalInstance.acquireTokenSilent({
         scopes: ['Files.Read', 'Files.ReadWrite', 'User.Read', 'offline_access'],
-        account: account
+        account: account,
       });
-
-      // Fetch files from Microsoft Graph
-      const endpoint = folderId 
-        ? `https://graph.microsoft.com/v1.0/me/drive/items/${folderId}/children`
-        : 'https://graph.microsoft.com/v1.0/me/drive/root/children';
-      
-      const response = await fetch(endpoint, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${tokenResponse.accessToken}`,
-          'Content-Type': 'application/json',
-          'Accept': 'application/json'
-        }
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => null);
-        console.error('Error response:', errorData);
-        const errorMessage = errorData?.error?.message || response.statusText;
-        const errorCode = errorData?.error?.code;
-        throw new Error(`Failed to fetch files: ${response.status} - ${errorMessage}${errorCode ? ` (${errorCode})` : ''}`);
-      }
-
-      const data = await response.json();
-      // console.log('Files fetched successfully:', data.value.length);
-      setFiles(data.value);
+      const data = await bffApi.getFiles(tokenResponse.accessToken, folderId);
+      setFiles(data.files);
+      await idbSetCache(cacheKey, data.files, FOLDER_CACHE_TTL);
     } catch (error) {
-      console.error('Error fetching files:', error);
+      console.error('Error fetching files via BFF:', error);
       if (error.name === 'InteractionRequiredAuthError') {
-        // console.log('Silent token acquisition failed, trying interactive...');
-        try {
-          const tokenResponse = await msalInstance.acquireTokenPopup({
-            scopes: ['Files.Read', 'Files.ReadWrite', 'User.Read', 'offline_access']
-          });
-          
-          // console.log('Interactive token acquisition successful:', tokenResponse);
-          
-          const endpoint = folderId 
-            ? `https://graph.microsoft.com/v1.0/me/drive/items/${folderId}/children`
-            : 'https://graph.microsoft.com/v1.0/me/drive/root/children';
-          
-          const response = await fetch(endpoint, {
-            method: 'GET',
-            headers: {
-              'Authorization': `Bearer ${tokenResponse.accessToken}`,
-              'Content-Type': 'application/json',
-              'Accept': 'application/json'
-            }
-          });
-
-          // console.log('Response status:', response.status);
-
-          if (!response.ok) {
-            const errorData = await response.json().catch(() => null);
-            console.error('Error response:', errorData);
-            const errorMessage = errorData?.error?.message || response.statusText;
-            const errorCode = errorData?.error?.code;
-            throw new Error(`Failed to fetch files: ${response.status} - ${errorMessage}${errorCode ? ` (${errorCode})` : ''}`);
-          }
-
-          const data = await response.json();
-          // console.log('Files fetched successfully:', data.value.length);
-          setFiles(data.value);
-        } catch (interactiveError) {
-          console.error('Interactive token acquisition failed:', interactiveError);
-          setError('Failed to fetch files: ' + interactiveError.message);
-        }
+        setError('Your session has expired. Please login again.');
+        handleLogout();
       } else {
-        setError('Failed to fetch files: ' + error.message);
+        setError(`Failed to fetch files: ${error.message}`);
       }
     }
   }, []);
@@ -308,137 +263,90 @@ function AppContent() {
   };
 
   const deleteFiles = async (filesToDelete, onProgress) => {
+    setError(null);
     try {
       const account = msalInstance.getActiveAccount();
       if (!account) {
-        throw new Error('No active account');
+        throw new Error('No active account. Please login to continue.');
       }
 
       const tokenResponse = await msalInstance.acquireTokenSilent({
         scopes: ['Files.Read', 'Files.ReadWrite', 'User.Read', 'offline_access'],
-        account: account
+        account: account,
       });
 
-      // Delete files in parallel with concurrency limit for better performance
-      const concurrencyLimit = 5; // Process 5 files at a time
-      const results = [];
-      const errors = [];
-      let completedCount = 0;
-
-      // Call progress callback if provided
+      const fileIdsToDelete = filesToDelete.map(file => file.id);
+      
       if (onProgress) {
-        onProgress(0, filesToDelete.length, 'Starting deletion...');
+        onProgress(0, fileIdsToDelete.length, 'Starting deletion...');
       }
 
-      // Process files in batches
-      for (let i = 0; i < filesToDelete.length; i += concurrencyLimit) {
-        const batch = filesToDelete.slice(i, i + concurrencyLimit);
-        
-        const batchPromises = batch.map(async (file) => {
-          try {
-            const response = await fetch(`https://graph.microsoft.com/v1.0/me/drive/items/${file.id}`, {
-              method: 'DELETE',
-              headers: {
-                'Authorization': `Bearer ${tokenResponse.accessToken}`,
-                'Content-Type': 'application/json'
-              }
-            });
+      const result = await bffApi.deleteFiles(tokenResponse.accessToken, fileIdsToDelete);
 
-            if (!response.ok) {
-              const errorMessage = `Failed to delete ${file.name}: ${response.status} ${response.statusText}`;
-              console.error(errorMessage);
-              return { success: false, file, error: errorMessage };
-            } else {
-              console.log(`Successfully deleted: ${file.name}`);
-              return { success: true, file };
-            }
-          } catch (error) {
-            const errorMessage = `Error deleting ${file.name}: ${error.message}`;
-            console.error(errorMessage);
-            return { success: false, file, error: errorMessage };
-          }
-        });
+      if (!result.success) {
+        throw new Error(`Failed to delete ${result.results.filter(r => !r.success).length} files.`);
+      }
 
-        // Wait for current batch to complete
-        const batchResults = await Promise.allSettled(batchPromises);
-        
-        // Process batch results
-        batchResults.forEach((result) => {
-          if (result.status === 'fulfilled') {
-            if (result.value.success) {
-              results.push(result.value.file);
-            } else {
-              errors.push({ file: result.value.file, error: result.value.error });
-            }
-          } else {
-            // This shouldn't happen with Promise.allSettled, but handle it anyway
-            console.error('Unexpected error in batch:', result.reason);
-          }
-        });
-
-        completedCount += batch.length;
-        
-        // Update progress
-        if (onProgress) {
-          const currentFile = batch[batch.length - 1];
-          onProgress(completedCount, filesToDelete.length, `Deleted ${currentFile?.name || 'files'}...`);
+      if (onProgress) {
+        onProgress(result.deletedCount, fileIdsToDelete.length, 'Deletion complete.');
+      }
+      
+      // Invalidate deleted files from all folder caches
+      const allCacheKeys = await idbGetAllFolderCacheKeys();
+      for (const cacheKey of allCacheKeys) {
+        const cached = await idbGetCache(cacheKey);
+        if (cached) {
+          const filtered = cached.filter(f => !fileIdsToDelete.includes(f.id));
+          await idbSetCache(cacheKey, filtered, FOLDER_CACHE_TTL);
         }
-        
-        console.log(`Completed ${completedCount}/${filesToDelete.length} files`);
       }
-
-      // If there were any errors, throw an error with details
-      if (errors.length > 0) {
-        const errorMessage = `Failed to delete ${errors.length} out of ${filesToDelete.length} files:\n${errors.map(e => e.error).join('\n')}`;
-        throw new Error(errorMessage);
-      }
-
       // Refresh the file list
       await fetchFiles();
       
-      return results;
+      return result;
     } catch (error) {
-      console.error('Error deleting files:', error);
+      console.error('Error deleting files via BFF:', error);
+      setError(`Failed to delete files: ${error.message}`);
       throw error;
     }
   };
 
+  // Helper to get all folder cache keys
+  async function idbGetAllFolderCacheKeys() {
+    const db = await (await window.indexedDB.open('ODDupAppState', 1)).result;
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction('state', 'readonly');
+      const store = tx.objectStore('state');
+      const keysReq = store.getAllKeys();
+      keysReq.onsuccess = () => {
+        const folderKeys = keysReq.result.filter(k => typeof k === 'string' && k.startsWith('folder_'));
+        resolve(folderKeys);
+      };
+      keysReq.onerror = () => reject(keysReq.error);
+    });
+  }
+
   const fetchFolderFiles = async (folderId) => {
+    setError(null);
+    const cacheKey = `folder_${folderId || 'root'}`;
     try {
+      // Try cache first
+      const cached = await idbGetCache(cacheKey);
+      if (cached) return cached;
       const account = msalInstance.getActiveAccount();
       if (!account) {
-        throw new Error('No active account');
+        throw new Error('No active account. Please login to continue.');
       }
-
       const tokenResponse = await msalInstance.acquireTokenSilent({
         scopes: ['Files.Read', 'Files.ReadWrite', 'User.Read', 'offline_access'],
-        account: account
+        account: account,
       });
-
-      // Handle root folder case
-      const endpoint = folderId === 'root' 
-        ? 'https://graph.microsoft.com/v1.0/me/drive/root/children'
-        : `https://graph.microsoft.com/v1.0/me/drive/items/${folderId}/children`;
-        
-      const response = await fetch(endpoint, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${tokenResponse.accessToken}`,
-          'Content-Type': 'application/json',
-          'Accept': 'application/json'
-        }
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => null);
-        const errorMessage = errorData?.error?.message || response.statusText;
-        throw new Error(`Failed to fetch folder files: ${response.status} - ${errorMessage}`);
-      }
-
-      const data = await response.json();
-      return data.value;
+      const data = await bffApi.getFiles(tokenResponse.accessToken, folderId === 'root' ? null : folderId);
+      await idbSetCache(cacheKey, data.files, FOLDER_CACHE_TTL);
+      return data.files;
     } catch (error) {
-      console.error('Error fetching folder files:', error);
+      console.error('Error fetching folder files via BFF:', error);
+      setError(`Failed to fetch folder files: ${error.message}`);
       throw error;
     }
   };
@@ -486,6 +394,146 @@ function AppContent() {
     
     // Track page navigation
     analytics.trackPageView(page);
+  };
+
+  const callHelloApi = async () => {
+    try {
+      setHelloMessage('Loading...');
+      const data = await bffApi.getHello();
+      setHelloMessage(data.message || 'No message');
+    } catch (err) {
+      console.error('Error calling BFF API:', err);
+      setHelloMessage('Error contacting backend: ' + err.message);
+    }
+  };
+
+  const checkHealth = async () => {
+    try {
+      setHelloMessage('Checking health...');
+      const data = await bffApi.getHealth();
+      setHelloMessage(`Health: ${data.status} (Uptime: ${Math.round(data.uptime)}s) - Services: ${JSON.stringify(data.services)}`);
+    } catch (err) {
+      console.error('Error checking health:', err);
+      setHelloMessage('Health check failed: ' + err.message);
+    }
+  };
+
+  const testUserInfo = async () => {
+    try {
+      setHelloMessage('Testing user info...');
+      const account = msalInstance.getActiveAccount();
+      if (!account) {
+        setHelloMessage('No active account. Please login first.');
+        return;
+      }
+
+      const tokenResponse = await msalInstance.acquireTokenSilent({
+        scopes: ['Files.Read', 'Files.ReadWrite', 'User.Read', 'offline_access'],
+        account: account
+      });
+
+      const userInfo = await bffApi.getUserInfo(tokenResponse.accessToken);
+      setHelloMessage(`User: ${userInfo.displayName} (${userInfo.mail})`);
+    } catch (err) {
+      console.error('Error testing user info:', err);
+      setHelloMessage('User info test failed: ' + err.message);
+    }
+  };
+
+  const testFiles = async () => {
+    try {
+      setHelloMessage('Testing files endpoint...');
+      const account = msalInstance.getActiveAccount();
+      if (!account) {
+        setHelloMessage('No active account. Please login first.');
+        return;
+      }
+
+      const tokenResponse = await msalInstance.acquireTokenSilent({
+        scopes: ['Files.Read', 'Files.ReadWrite', 'User.Read', 'offline_access'],
+        account: account
+      });
+
+      const filesData = await bffApi.getFiles(tokenResponse.accessToken);
+      setHelloMessage(`Files: ${filesData.totalCount} items found`);
+    } catch (err) {
+      console.error('Error testing files:', err);
+      setHelloMessage('Files test failed: ' + err.message);
+    }
+  };
+
+  const testDuplicateDetection = async () => {
+    try {
+      setHelloMessage('Testing duplicate detection...');
+      const account = msalInstance.getActiveAccount();
+      if (!account) {
+        setHelloMessage('No active account. Please login first.');
+        return;
+      }
+
+      const tokenResponse = await msalInstance.acquireTokenSilent({
+        scopes: ['Files.Read', 'Files.ReadWrite', 'User.Read', 'offline_access'],
+        account: account
+      });
+
+      // Test with mock files
+      const mockFiles = [
+        { id: '1', name: 'test1.txt', size: 100 },
+        { id: '2', name: 'test2.txt', size: 100 },
+        { id: '3', name: 'unique.txt', size: 200 }
+      ];
+
+      const results = await bffApi.detectDuplicates(tokenResponse.accessToken, mockFiles, 'size');
+      setHelloMessage(`Duplicates: ${results.duplicates.length} groups found (${results.processedFiles} files processed)`);
+    } catch (err) {
+      console.error('Error testing duplicate detection:', err);
+      setHelloMessage('Duplicate detection test failed: ' + err.message);
+    }
+  };
+
+  const testDuplicateDetectionMock = async () => {
+    try {
+      setHelloMessage('Testing duplicate detection with mock token...');
+      
+      // Test with mock files and mock token
+      const mockFiles = [
+        { id: '1', name: 'test1.txt', size: 100 },
+        { id: '2', name: 'test2.txt', size: 100 },
+        { id: '3', name: 'unique.txt', size: 200 }
+      ];
+
+      const results = await bffApi.detectDuplicates('mock-token', mockFiles, 'size');
+      setHelloMessage(`Duplicates: ${results.duplicates.length} groups found (${results.processedFiles} files processed)`);
+    } catch (err) {
+      console.error('Error testing duplicate detection with mock:', err);
+      setHelloMessage('Mock duplicate detection test failed: ' + err.message);
+    }
+  };
+
+  const runAIDetection = async () => {
+    setAiDetectionLoading(true);
+    setAiDetectionError(null);
+    setAiDetectionResults([]);
+    try {
+      const account = msalInstance.getActiveAccount();
+      if (!account) throw new Error('No active account. Please login first.');
+      const tokenResponse = await msalInstance.acquireTokenSilent({
+        scopes: ['Files.Read', 'Files.ReadWrite', 'User.Read', 'offline_access'],
+        account: account
+      });
+      // Use current files in view (or fetch root if empty)
+      let filesToScan = files;
+      if (!filesToScan || filesToScan.length === 0) {
+        const data = await bffApi.getFiles(tokenResponse.accessToken);
+        filesToScan = data.files;
+      }
+      const { results } = await bffApi.aiDetectDuplicates(tokenResponse.accessToken, filesToScan);
+      setAiDetectionResults(results);
+    } catch (err) {
+      setAiDetectionError(err.message);
+    } finally {
+      setAiDetectionLoading(false);
+    }
   };
 
   const renderContent = () => {
@@ -607,9 +655,25 @@ function AppContent() {
                 <p>Identify similar videos using frame analysis</p>
               </div>
             </div>
-            <button className="ai-scan-btn" onClick={() => handlePageChange('duplicates')}>
-              Start AI Detection
+            <button className="ai-scan-btn" onClick={runAIDetection} disabled={aiDetectionLoading}>
+              {aiDetectionLoading ? 'Scanning...' : 'Run AI Detection'}
             </button>
+            {aiDetectionError && <div className="error" style={{marginTop:8}}>{aiDetectionError}</div>}
+            {aiDetectionResults.length > 0 && (
+              <div className="ai-results" style={{marginTop:16}}>
+                <h4>AI Detected Duplicate Groups</h4>
+                {aiDetectionResults.map((group, idx) => (
+                  <div key={idx} style={{border:'1px solid #ccc', borderRadius:6, margin:'8px 0', padding:8}}>
+                    <div><b>Type:</b> {group.type} <b>Confidence:</b> {Math.round(group.confidence*100)}% <b>Reason:</b> {group.reason}</div>
+                    <ul style={{margin:'4px 0 0 0', paddingLeft:16}}>
+                      {group.files.map(f => (
+                        <li key={f.id}>{f.name} <span style={{color:'#888'}}>({f.size} bytes)</span></li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         );
 
@@ -778,6 +842,32 @@ function AppContent() {
             {notification}
           </div>
         )}
+        <div style={{ margin: '1rem 0', padding: '1rem', background: '#f8f9fa', borderRadius: 8 }}>
+          <h4 style={{ margin: '0 0 1rem 0', color: '#333' }}>BFF Backend Testing</h4>
+          <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+            <button onClick={callHelloApi} style={{ padding: '0.5rem 1rem', fontWeight: 600, borderRadius: 4, border: '1px solid #0078d4', background: '#0078d4', color: 'white', cursor: 'pointer' }}>
+              Test Hello API
+            </button>
+            <button onClick={checkHealth} style={{ padding: '0.5rem 1rem', fontWeight: 600, borderRadius: 4, border: '1px solid #28a745', background: '#28a745', color: 'white', cursor: 'pointer' }}>
+              Check Health
+            </button>
+            <button onClick={testUserInfo} style={{ padding: '0.5rem 1rem', fontWeight: 600, borderRadius: 4, border: '1px solid #28a745', background: '#28a745', color: 'white', cursor: 'pointer' }}>
+              Test User Info
+            </button>
+            <button onClick={testFiles} style={{ padding: '0.5rem 1rem', fontWeight: 600, borderRadius: 4, border: '1px solid #28a745', background: '#28a745', color: 'white', cursor: 'pointer' }}>
+              Test Files
+            </button>
+            <button onClick={testDuplicateDetection} style={{ padding: '0.5rem 1rem', fontWeight: 600, borderRadius: 4, border: '1px solid #28a745', background: '#28a745', color: 'white', cursor: 'pointer' }}>
+              Test Duplicate Detection
+            </button>
+            <button onClick={testDuplicateDetectionMock} style={{ padding: '0.5rem 1rem', fontWeight: 600, borderRadius: 4, border: '1px solid #ffc107', background: '#ffc107', color: 'black', cursor: 'pointer' }}>
+              Test Duplicates (Mock)
+            </button>
+          </div>
+          {helloMessage && (
+            <div style={{ marginTop: 8, color: '#1976d2', fontWeight: 500 }}>{helloMessage}</div>
+          )}
+        </div>
         </main>
       </header>
       

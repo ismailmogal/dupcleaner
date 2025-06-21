@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo, useImperativeHandle, forwardRef, useRef } from 'react';
 import { DuplicateDetector } from '../utils/duplicateDetector';
-import FolderSelector from './FolderSelector';
+import FileBrowser from './FileBrowser';
 import { analytics } from './Analytics';
 import './MultiFolderDuplicateManager.css';
 import { mfSet, mfGet, mfRemove } from '../utils/idbMultiFolder';
@@ -44,8 +44,8 @@ function getLogicalFileType(item) {
   return 'other';
 }
 
-const MultiFolderDuplicateManager = forwardRef(({ onFetchFolderFiles, onDeleteFiles }, ref) => {
-  const [selectedFolders, setSelectedFolders] = useState([]);
+const MultiFolderDuplicateManager = forwardRef(({ onFetchFolderFiles, onDeleteFiles, selectedFolders: selectedFoldersProp }, ref) => {
+  const [selectedFolders, setSelectedFolders] = useState(selectedFoldersProp || []);
   const addingFolderRef = useRef(new Set());
   const [folderFiles, setFolderFiles] = useState({}); // { folderId: { folder, files } }
   const [duplicateGroups, setDuplicateGroups] = useState([]);
@@ -60,7 +60,6 @@ const MultiFolderDuplicateManager = forwardRef(({ onFetchFolderFiles, onDeleteFi
   const [isLoadingFolders, setIsLoadingFolders] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteProgress, setDeleteProgress] = useState({ current: 0, total: 0, fileName: '' });
-  const [showFolderSelector, setShowFolderSelector] = useState(false);
   const [scanProgress, setScanProgress] = useState({ current: 0, total: 0, folderName: '' });
   const [currentKeepStrategy, setCurrentKeepStrategy] = useState('newest');
   const [sortBy, setSortBy] = useState('name');
@@ -68,6 +67,12 @@ const MultiFolderDuplicateManager = forwardRef(({ onFetchFolderFiles, onDeleteFi
   const [filterFolder, setFilterFolder] = useState('');
   const [filterSize, setFilterSize] = useState('');
   const [filterDate, setFilterDate] = useState('');
+  
+  // FileBrowser state for embedded folder selection
+  const [currentFolder, setCurrentFolder] = useState(null);
+  const [currentFolderPath, setCurrentFolderPath] = useState([]);
+  const [browserFiles, setBrowserFiles] = useState([]);
+  const [isLoadingBrowser, setIsLoadingBrowser] = useState(false);
 
   const detector = useMemo(() => new DuplicateDetector(), []);
 
@@ -124,6 +129,30 @@ const MultiFolderDuplicateManager = forwardRef(({ onFetchFolderFiles, onDeleteFi
   useEffect(() => {
     localStorage.setItem('multiFolderDuplicateManager_sortOrder', sortOrder);
   }, [sortOrder]);
+
+  // Sync internal selectedFolders state with prop
+  useEffect(() => {
+    if (Array.isArray(selectedFoldersProp)) {
+      setSelectedFolders(selectedFoldersProp);
+    }
+  }, [selectedFoldersProp]);
+
+  // Load initial files when FileBrowser is opened
+  useEffect(() => {
+    if (currentFolder && currentFolder.id === 'root') {
+      setIsLoadingBrowser(true);
+      onFetchFolderFiles(null) // null for root folder
+        .then(files => {
+          setBrowserFiles(files);
+        })
+        .catch(error => {
+          console.error('Error loading root folder:', error);
+        })
+        .finally(() => {
+          setIsLoadingBrowser(false);
+        });
+    }
+  }, [currentFolder, onFetchFolderFiles]);
 
   // Recursive function to get all files from a folder and its subfolders (parallelized)
   const loadFolderFilesRecursively = useCallback(async (folder, parentPath = '', depth = 0, maxDepth = 10) => {
@@ -248,6 +277,52 @@ const MultiFolderDuplicateManager = forwardRef(({ onFetchFolderFiles, onDeleteFi
 
   const handleFolderSelect = (folder, fileTypeFilters) => {
     addFolder(folder, fileTypeFilters);
+  };
+
+  // FileBrowser event handlers
+  const handleFolderClick = async (folder) => {
+    setCurrentFolder(folder);
+    setCurrentFolderPath(prev => [...prev, folder]);
+    setIsLoadingBrowser(true);
+    
+    try {
+      const files = await onFetchFolderFiles(folder.id);
+      setBrowserFiles(files);
+    } catch (error) {
+      console.error('Error loading folder contents:', error);
+    } finally {
+      setIsLoadingBrowser(false);
+    }
+  };
+
+  const handleBreadcrumbClick = (index) => {
+    if (index === -1) {
+      // Root folder
+      setCurrentFolder(null);
+      setCurrentFolderPath([]);
+      setBrowserFiles([]);
+    } else {
+      // Navigate to specific folder in path
+      const newPath = currentFolderPath.slice(0, index + 1);
+      const targetFolder = newPath[newPath.length - 1];
+      setCurrentFolder(targetFolder);
+      setCurrentFolderPath(newPath);
+      
+      // Load files for this folder
+      onFetchFolderFiles(targetFolder.id).then(files => {
+        setBrowserFiles(files);
+      }).catch(error => {
+        console.error('Error loading folder contents:', error);
+      });
+    }
+  };
+
+  const handleAddToComparison = (folder) => {
+    addFolder(folder);
+  };
+
+  const handleFileSelect = (file) => {
+    // Files are not selectable in this context, only folders
   };
 
   const removeFolder = (folderId) => {
@@ -1078,10 +1153,10 @@ const MultiFolderDuplicateManager = forwardRef(({ onFetchFolderFiles, onDeleteFi
           <div className="folder-actions">
             <button 
               className="add-folder-btn"
-              onClick={() => setShowFolderSelector(true)}
+              onClick={() => setCurrentFolder({ id: 'root', name: 'Root' })}
               disabled={isLoadingFolders}
             >
-              {isLoadingFolders ? 'Loading...' : '+ Add Folder'}
+              {isLoadingFolders ? 'Loading...' : '📁 Browse Folders'}
             </button>
             {selectedFolders.length > 0 && (
               <button 
@@ -1130,6 +1205,35 @@ const MultiFolderDuplicateManager = forwardRef(({ onFetchFolderFiles, onDeleteFi
           </p>
         )}
       </div>
+
+      {/* Embedded FileBrowser for folder selection */}
+      {currentFolder && (
+        <div className="embedded-file-browser">
+          <div className="browser-header">
+            <h3>Browse and Select Folders</h3>
+            <button 
+              className="close-browser-btn"
+              onClick={() => setCurrentFolder(null)}
+              title="Close folder browser"
+            >
+              ×
+            </button>
+          </div>
+          <FileBrowser
+            files={browserFiles}
+            currentFolder={currentFolder}
+            folderPath={currentFolderPath}
+            onFolderClick={handleFolderClick}
+            onBreadcrumbClick={handleBreadcrumbClick}
+            onFileSelect={handleFileSelect}
+            onAddToComparison={handleAddToComparison}
+            defaultViewMode="grid"
+            showFileSizes={true}
+            showFileDates={true}
+            compactMode={true}
+          />
+        </div>
+      )}
 
       {selectedFolders.length >= 2 && (
         <>
@@ -1483,14 +1587,6 @@ Depth: ${file.depth} levels deep`}
             </div>
           )}
         </>
-      )}
-
-      {showFolderSelector && (
-        <FolderSelector
-          onFetchFolderFiles={onFetchFolderFiles}
-          onFolderSelect={handleFolderSelect}
-          onClose={() => setShowFolderSelector(false)}
-        />
       )}
     </div>
   );

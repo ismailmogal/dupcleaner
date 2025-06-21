@@ -1,23 +1,56 @@
 .smart-organizer {
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 2rem;
+  padding: 1rem;
+  background-color: #f9f9f9;
+  border-radius: 8px;
 }
 
 .organizer-header {
-  text-align: center;
-  margin-bottom: 3rem;
+  margin-bottom: 1.5rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid #e1e1e1;
 }
 
 .organizer-header h2 {
-  color: #2c3e50;
-  font-size: 2.5rem;
-  margin-bottom: 1rem;
+  margin: 0 0 0.25rem 0;
 }
 
 .organizer-header p {
-  color: #7f8c8d;
-  font-size: 1.2rem;
+  margin: 0;
+  color: #666;
+}
+
+.large-files-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.large-file-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem 1rem;
+  background-color: #fff;
+  border-radius: 6px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+  transition: box-shadow 0.2s;
+}
+
+.large-file-item:hover {
+  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+}
+
+.file-name {
+  font-weight: 500;
+}
+
+.file-size {
+  font-family: monospace;
+  background-color: #eef2f5;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  font-weight: 600;
+  color: #333;
 }
 
 .file-insights {
@@ -247,6 +280,31 @@
 .cancel-btn:hover {
   background: #7f8c8d;
   transform: translateY(-1px);
+}
+
+.organizer-actions {
+  margin-bottom: 1rem;
+}
+
+.delete-button {
+  background-color: #d9534f;
+  color: white;
+  border: none;
+  padding: 0.75rem 1.5rem;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: bold;
+  transition: background-color 0.2s;
+}
+
+.delete-button:hover {
+  background-color: #c9302c;
+}
+
+.large-file-item input[type="checkbox"] {
+  margin-right: 1rem;
+  width: 18px;
+  height: 18px;
 }
 
 /* Responsive Design */

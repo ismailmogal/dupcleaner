@@ -5,12 +5,15 @@
   "sideEffects": false,
   "dependencies": {
     "@azure/msal-browser": "^4.13.2",
+    "@azure/msal-react": "^3.0.13",
+    "@tanstack/react-table": "^8.13.2",
     "@testing-library/jest-dom": "^5.17.0",
     "@testing-library/react": "^13.4.0",
     "@testing-library/user-event": "^13.5.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-refresh": "^0.17.0",
+    "react-router-dom": "^7.6.2",
     "react-scripts": "^0.0.0",
     "web-vitals": "^2.1.4"
   },
@@ -18,7 +21,9 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "react-scripts test",
+    "test": "vitest",
+    "test:ui": "vitest --ui",
+    "test:coverage": "vitest --coverage",
     "analyze": "vite build --mode analyze"
   },
   "eslintConfig": {
@@ -41,6 +46,10 @@
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.5.2",
-    "vite": "^6.3.5"
+    "vite": "^6.3.5",
+    "vitest": "^2.1.8",
+    "@vitest/ui": "^2.1.8",
+    "@vitest/coverage-v8": "^2.1.8",
+    "jsdom": "^26.0.0"
   }
 }

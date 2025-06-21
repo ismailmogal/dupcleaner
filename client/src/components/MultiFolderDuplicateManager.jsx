@@ -3,6 +3,7 @@ import { DuplicateDetector } from '../utils/duplicateDetector';
 import FolderSelector from './FolderSelector';
 import { analytics } from './Analytics';
 import './MultiFolderDuplicateManager.css';
+import { mfSet, mfGet, mfRemove } from '../utils/idbMultiFolder';
 
 // Helper: Run async tasks in parallel with a concurrency limit
 async function runWithConcurrencyLimit(tasks, limit = 5) {
@@ -154,53 +155,38 @@ const MultiFolderDuplicateManager = forwardRef(({ onFetchFolderFiles, onDeleteFi
     }
   }, [onFetchFolderFiles]);
 
-  // Load saved folder selections from localStorage
+  // Load saved folder selections from IndexedDB
   useEffect(() => {
-    const savedFolders = localStorage.getItem('multiFolderDuplicateManager_selectedFolders');
-    if (savedFolders) {
-      try {
-        const parsed = JSON.parse(savedFolders);
-        setSelectedFolders(parsed);
+    (async () => {
+      const savedFolders = await mfGet('selectedFolders');
+      if (savedFolders) {
+        setSelectedFolders(savedFolders);
         // Load files for saved folders
-        parsed.forEach(folder => {
+        savedFolders.forEach(folder => {
           loadFolderFilesRecursively(folder);
         });
-      } catch (error) {
-        console.error('Error loading saved folders:', error);
       }
-    }
-  }, []); // Remove loadFolderFilesRecursively dependency to avoid infinite loops
+    })();
+  }, []);
 
-  // Check for pending folders from other pages
+  // Save folder selections to IndexedDB whenever they change
   useEffect(() => {
-    const pendingFolders = localStorage.getItem('pendingComparisonFolders');
-    if (pendingFolders) {
-      try {
-        const parsed = JSON.parse(pendingFolders);
-        console.log('Found pending folders:', parsed.length);
-        
-        // Process pending folders after a short delay to ensure component is fully mounted
-        setTimeout(() => {
-          parsed.forEach(folder => {
-            if (!selectedFolders.find(f => f.id === folder.id)) {
-              console.log('Adding pending folder:', folder.name);
-              addFolder(folder);
-            }
-          });
-          
-          // Clear pending folders after processing
-          localStorage.removeItem('pendingComparisonFolders');
-        }, 100);
-      } catch (error) {
-        console.error('Error processing pending folders:', error);
-        localStorage.removeItem('pendingComparisonFolders');
+    mfSet('selectedFolders', selectedFolders);
+  }, [selectedFolders]);
+
+  // Check for pending folders from IndexedDB
+  useEffect(() => {
+    (async () => {
+      const pendingFolders = await mfGet('pendingComparisonFolders');
+      if (pendingFolders && Array.isArray(pendingFolders) && pendingFolders.length > 0) {
+        // Deduplicate: only add folders not already selected
+        const toAdd = pendingFolders.filter(folder => !selectedFolders.find(f => f.id === folder.id));
+        for (const folder of toAdd) {
+          await addFolder(folder);
+        }
+        await mfRemove('pendingComparisonFolders');
       }
-    }
-  }, []); // Only run once when component mounts
-
-  // Save folder selections to localStorage whenever they change
-  useEffect(() => {
-    localStorage.setItem('multiFolderDuplicateManager_selectedFolders', JSON.stringify(selectedFolders));
+    })();
   }, [selectedFolders]);
 
   const addFolder = async (folder) => {
@@ -245,28 +231,17 @@ const MultiFolderDuplicateManager = forwardRef(({ onFetchFolderFiles, onDeleteFi
     }
   };
 
-  // Expose addFolder function to parent component
+  // Expose addFolder and checkPendingFolders to parent
   useImperativeHandle(ref, () => ({
     addFolder,
-    checkPendingFolders: () => {
-      const pendingFolders = localStorage.getItem('pendingComparisonFolders');
-      if (pendingFolders) {
-        try {
-          const parsed = JSON.parse(pendingFolders);
-          console.log('Manual check - Found pending folders:', parsed.length);
-          
-          parsed.forEach(folder => {
-            if (!selectedFolders.find(f => f.id === folder.id)) {
-              console.log('Adding pending folder:', folder.name);
-              addFolder(folder);
-            }
-          });
-          
-          localStorage.removeItem('pendingComparisonFolders');
-        } catch (error) {
-          console.error('Error processing pending folders:', error);
-          localStorage.removeItem('pendingComparisonFolders');
+    checkPendingFolders: async () => {
+      const pendingFolders = await mfGet('pendingComparisonFolders');
+      if (pendingFolders && Array.isArray(pendingFolders) && pendingFolders.length > 0) {
+        const toAdd = pendingFolders.filter(folder => !selectedFolders.find(f => f.id === folder.id));
+        for (const folder of toAdd) {
+          await addFolder(folder);
         }
+        await mfRemove('pendingComparisonFolders');
       }
     }
   }));

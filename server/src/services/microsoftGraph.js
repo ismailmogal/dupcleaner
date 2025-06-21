@@ -205,6 +205,62 @@ class MicrosoftGraphService {
       throw new Error('Failed to delete files');
     }
   }
+
+  // Get drive information
+  async getDriveInfo(accessToken) {
+    try {
+      if (!this.isConfigured) {
+        return {
+          id: 'mock-drive-id',
+          driveType: 'personal',
+          owner: {
+            user: {
+              displayName: 'Mock User',
+              id: 'mock-user-id'
+            }
+          },
+          quota: {
+            deleted: 0,
+            remaining: 1073741824000, // 1TB
+            state: 'normal',
+            total: 1073741824000,
+            used: 0
+          }
+        };
+      }
+
+      const graphClient = this.createGraphClient(accessToken);
+      const drive = await graphClient.api('/me/drive').get();
+      
+      return drive;
+    } catch (error) {
+      console.error('Error getting drive info:', error);
+      throw new Error('Failed to get drive information');
+    }
+  }
+
+  // Get storage quota
+  async getStorageQuota(accessToken) {
+    try {
+      if (!this.isConfigured) {
+        return {
+          deleted: 0,
+          remaining: 1073741824000, // 1TB
+          state: 'normal',
+          total: 1073741824000,
+          used: 0
+        };
+      }
+
+      const graphClient = this.createGraphClient(accessToken);
+      const quota = await graphClient.api('/me/drive/quota').get();
+      
+      return quota;
+    } catch (error) {
+      console.error('Error getting storage quota:', error);
+      throw new Error('Failed to get storage quota');
+    }
+  }
 }
 
 module.exports = new MicrosoftGraphService(); 

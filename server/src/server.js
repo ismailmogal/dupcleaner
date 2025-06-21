@@ -223,11 +223,110 @@ app.post('/api/ai-duplicates', async (req, res) => {
       return await microsoftGraphService.getFileContent(accessToken, fileId);
     };
     const results = await aiDuplicateDetector.findAIDuplicates(files, getFileContent);
-    res.json({ results });
+    res.json(results);
   } catch (error) {
     debugError('Error in AI duplicate detection:', error);
     res.status(500).json({ error: 'Failed to detect AI duplicates', message: error.message });
   }
+});
+
+// Drive info endpoint
+app.get('/api/drive-info', async (req, res) => {
+  try {
+    const accessToken = req.headers.authorization?.replace('Bearer ', '');
+    
+    if (!accessToken) {
+      return res.status(401).json({ error: 'Access token required' });
+    }
+
+    const driveInfo = await microsoftGraphService.getDriveInfo(accessToken);
+    res.json(driveInfo);
+  } catch (error) {
+    debugError('Error getting drive info:', error);
+    res.status(500).json({ 
+      error: 'Failed to get drive information',
+      message: error.message 
+    });
+  }
+});
+
+// Storage quota endpoint
+app.get('/api/storage-quota', async (req, res) => {
+  try {
+    const accessToken = req.headers.authorization?.replace('Bearer ', '');
+    
+    if (!accessToken) {
+      return res.status(401).json({ error: 'Access token required' });
+    }
+
+    const quota = await microsoftGraphService.getStorageQuota(accessToken);
+    res.json(quota);
+  } catch (error) {
+    debugError('Error getting storage quota:', error);
+    res.status(500).json({ 
+      error: 'Failed to get storage quota',
+      message: error.message 
+    });
+  }
+});
+
+// Clear folder cache endpoint
+app.delete('/api/cache/folder/:folderId', async (req, res) => {
+  try {
+    const { folderId } = req.params;
+    const accessToken = req.headers.authorization?.replace('Bearer ', '');
+    
+    if (!accessToken) {
+      return res.status(401).json({ error: 'Access token required' });
+    }
+
+    // For now, just return success since we don't have caching implemented
+    res.json({ success: true, message: 'Folder cache cleared' });
+  } catch (error) {
+    debugError('Error clearing folder cache:', error);
+    res.status(500).json({ 
+      error: 'Failed to clear folder cache',
+      message: error.message 
+    });
+  }
+});
+
+// Cache stats endpoint
+app.get('/api/cache/stats', async (req, res) => {
+  try {
+    const accessToken = req.headers.authorization?.replace('Bearer ', '');
+    
+    if (!accessToken) {
+      return res.status(401).json({ error: 'Access token required' });
+    }
+
+    // For now, return mock stats since we don't have caching implemented
+    res.json({
+      totalCachedFolders: 0,
+      totalCachedFiles: 0,
+      cacheSize: 0,
+      lastUpdated: new Date().toISOString()
+    });
+  } catch (error) {
+    debugError('Error getting cache stats:', error);
+    res.status(500).json({ 
+      error: 'Failed to get cache stats',
+      message: error.message 
+    });
+  }
+});
+
+// Health check endpoint (alias for /api/health)
+app.get('/api/health-check', (req, res) => {
+  res.json({ 
+    status: 'ok', 
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+    services: {
+      microsoftGraph: microsoftGraphService.isConfigured ? 'configured' : 'mock',
+      duplicateDetector: 'ready'
+    }
+  });
 });
 
 // Error handling middleware

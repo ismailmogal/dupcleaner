@@ -1,8 +1,7 @@
 import { useState, useCallback, useRef } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { analytics } from '../components/Analytics';
-
-const DEBUG = import.meta.env.VITE_DEBUG === 'true';
+import { debugLog, debugWarn, debugError, DEBUG } from '../utils/idbState';
 
 export const useFileOperations = () => {
   const { bffApi } = useAuth();
@@ -35,7 +34,7 @@ export const useFileOperations = () => {
       setIsLoading(true);
       setError(null);
       
-      if (DEBUG) console.log('Fetching drive root children...');
+      if (DEBUG) debugLog('Fetching drive root children...');
       
       const files = await bffApi.getDriveRootChildren();
       
@@ -46,7 +45,7 @@ export const useFileOperations = () => {
       
       return files;
     } catch (error) {
-      if (DEBUG) console.error('Error fetching drive root children:', error);
+      if (DEBUG) debugError('Error fetching drive root children:', error);
       setError('Failed to fetch files: ' + error.message);
       analytics.trackError(error, { action: 'fetch_root_files' });
       throw error;
@@ -61,7 +60,7 @@ export const useFileOperations = () => {
       setIsLoading(true);
       setError(null);
       
-      if (DEBUG) console.log('Fetching folder children:', folderId);
+      if (DEBUG) debugLog('Fetching folder children:', folderId);
       
       const files = await bffApi.getFolderChildren(folderId);
       
@@ -73,7 +72,7 @@ export const useFileOperations = () => {
       
       return files;
     } catch (error) {
-      if (DEBUG) console.error('Error fetching folder children:', error);
+      if (DEBUG) debugError('Error fetching folder children:', error);
       setError('Failed to fetch folder files: ' + error.message);
       analytics.trackError(error, { action: 'fetch_folder_files', folderId });
       throw error;
@@ -88,7 +87,7 @@ export const useFileOperations = () => {
       setIsLoading(true);
       setError(null);
       
-      if (DEBUG) console.log('Searching files:', query);
+      if (DEBUG) debugLog('Searching files:', query);
       
       const files = await bffApi.searchFiles(query);
       
@@ -99,7 +98,7 @@ export const useFileOperations = () => {
       
       return files;
     } catch (error) {
-      if (DEBUG) console.error('Error searching files:', error);
+      if (DEBUG) debugError('Error searching files:', error);
       setError('Failed to search files: ' + error.message);
       analytics.trackError(error, { action: 'search_files', query });
       throw error;
@@ -113,13 +112,13 @@ export const useFileOperations = () => {
     try {
       setError(null);
       
-      if (DEBUG) console.log('Fetching file metadata:', fileId);
+      if (DEBUG) debugLog('Fetching file metadata:', fileId);
       
       const metadata = await bffApi.getFileMetadata(fileId);
       
       return metadata;
     } catch (error) {
-      if (DEBUG) console.error('Error fetching file metadata:', error);
+      if (DEBUG) debugError('Error fetching file metadata:', error);
       setError('Failed to fetch file metadata: ' + error.message);
       analytics.trackError(error, { action: 'fetch_file_metadata', fileId });
       throw error;
@@ -131,13 +130,13 @@ export const useFileOperations = () => {
     try {
       setError(null);
       
-      if (DEBUG) console.log('Getting download URL for file:', fileId);
+      if (DEBUG) debugLog('Getting download URL for file:', fileId);
       
       const downloadUrl = await bffApi.getFileDownloadUrl(fileId);
       
       return downloadUrl;
     } catch (error) {
-      if (DEBUG) console.error('Error getting download URL:', error);
+      if (DEBUG) debugError('Error getting download URL:', error);
       setError('Failed to get download URL: ' + error.message);
       analytics.trackError(error, { action: 'get_download_url', fileId });
       throw error;
@@ -150,7 +149,7 @@ export const useFileOperations = () => {
       setIsLoading(true);
       setError(null);
       
-      if (DEBUG) console.log('Deleting file:', fileId);
+      if (DEBUG) debugLog('Deleting file:', fileId);
       
       const result = await bffApi.deleteFile(fileId);
       
@@ -161,7 +160,7 @@ export const useFileOperations = () => {
       
       return result;
     } catch (error) {
-      if (DEBUG) console.error('Error deleting file:', error);
+      if (DEBUG) debugError('Error deleting file:', error);
       setError('Failed to delete file: ' + error.message);
       analytics.trackError(error, { action: 'delete_file', fileId });
       throw error;
@@ -176,7 +175,7 @@ export const useFileOperations = () => {
       setIsLoading(true);
       setError(null);
       
-      if (DEBUG) console.log('Deleting files in batch:', fileIds.length);
+      if (DEBUG) debugLog('Deleting files in batch:', fileIds.length);
       
       // Set up abort controller
       abortControllerRef.current = new AbortController();
@@ -201,7 +200,7 @@ export const useFileOperations = () => {
       
       return result;
     } catch (error) {
-      if (DEBUG) console.error('Error deleting files in batch:', error);
+      if (DEBUG) debugError('Error deleting files in batch:', error);
       setError('Failed to delete files: ' + error.message);
       analytics.trackError(error, { action: 'delete_files_batch', count: fileIds.length });
       throw error;
@@ -216,13 +215,13 @@ export const useFileOperations = () => {
     try {
       setError(null);
       
-      if (DEBUG) console.log('Fetching drive information...');
+      if (DEBUG) debugLog('Fetching drive information...');
       
       const driveInfo = await bffApi.getDriveInfo();
       
       return driveInfo;
     } catch (error) {
-      if (DEBUG) console.error('Error fetching drive info:', error);
+      if (DEBUG) debugError('Error fetching drive info:', error);
       setError('Failed to fetch drive information: ' + error.message);
       analytics.trackError(error, { action: 'fetch_drive_info' });
       throw error;
@@ -234,13 +233,13 @@ export const useFileOperations = () => {
     try {
       setError(null);
       
-      if (DEBUG) console.log('Fetching storage quota...');
+      if (DEBUG) debugLog('Fetching storage quota...');
       
       const quota = await bffApi.getStorageQuota();
       
       return quota;
     } catch (error) {
-      if (DEBUG) console.error('Error fetching storage quota:', error);
+      if (DEBUG) debugError('Error fetching storage quota:', error);
       setError('Failed to fetch storage quota: ' + error.message);
       analytics.trackError(error, { action: 'fetch_storage_quota' });
       throw error;
@@ -252,7 +251,7 @@ export const useFileOperations = () => {
     try {
       setError(null);
       
-      if (DEBUG) console.log('Clearing folder cache:', folderId);
+      if (DEBUG) debugLog('Clearing folder cache:', folderId);
       
       const result = await bffApi.clearFolderCache(folderId);
       
@@ -263,7 +262,7 @@ export const useFileOperations = () => {
       
       return result;
     } catch (error) {
-      if (DEBUG) console.error('Error clearing folder cache:', error);
+      if (DEBUG) debugError('Error clearing folder cache:', error);
       setError('Failed to clear cache: ' + error.message);
       analytics.trackError(error, { action: 'clear_folder_cache', folderId });
       throw error;
@@ -275,13 +274,13 @@ export const useFileOperations = () => {
     try {
       setError(null);
       
-      if (DEBUG) console.log('Fetching cache statistics...');
+      if (DEBUG) debugLog('Fetching cache statistics...');
       
       const stats = await bffApi.getCacheStats();
       
       return stats;
     } catch (error) {
-      if (DEBUG) console.error('Error fetching cache stats:', error);
+      if (DEBUG) debugError('Error fetching cache stats:', error);
       setError('Failed to fetch cache statistics: ' + error.message);
       analytics.trackError(error, { action: 'fetch_cache_stats' });
       throw error;
@@ -294,7 +293,7 @@ export const useFileOperations = () => {
       const health = await bffApi.healthCheck();
       return health.status === 'healthy';
     } catch (error) {
-      if (DEBUG) console.error('BFF health check failed:', error);
+      if (DEBUG) debugError('BFF health check failed:', error);
       return false;
     }
   }, [bffApi]);

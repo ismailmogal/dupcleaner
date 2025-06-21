@@ -1,3 +1,5 @@
+import { debugLog, debugWarn, debugError } from './idbState';
+
 // Web Worker for duplicate detection
 // This runs in a separate thread to prevent UI blocking
 
@@ -21,7 +23,7 @@ class DuplicateDetectorWorker {
 
   // Method 1: Exact name and size match (O(n) with hash map)
   findExactMatches(files) {
-    console.log('Worker: findExactMatches called with', files.length, 'files');
+    debugLog('Worker: findExactMatches called with', files.length, 'files');
     const groups = new Map();
     let processed = 0;
     
@@ -43,13 +45,13 @@ class DuplicateDetectorWorker {
     }
 
     const result = Array.from(groups.values()).filter(group => group.length > 1);
-    console.log('Worker: findExactMatches found', result.length, 'groups');
+    debugLog('Worker: findExactMatches found', result.length, 'groups');
     
     // Debug: log some sample groups
     if (result.length > 0) {
-      console.log('Worker: Sample exact match groups:');
+      debugLog('Worker: Sample exact match groups:');
       result.slice(0, 3).forEach((group, index) => {
-        console.log(`Worker: Exact Group ${index + 1}:`, group.map(f => ({
+        debugLog(`Worker: Exact Group ${index + 1}:`, group.map(f => ({
           name: f.name,
           size: f.size,
           formattedSize: this.formatFileSize(f.size || 0)
@@ -62,7 +64,7 @@ class DuplicateDetectorWorker {
 
   // Method 2: Optimized name similarity with chunked processing
   findSimilarNames(files, threshold = 0.8) {
-    console.log('Worker: findSimilarNames called with', files.length, 'files, threshold:', threshold);
+    debugLog('Worker: findSimilarNames called with', files.length, 'files, threshold:', threshold);
     const groups = [];
     const processed = new Set();
     
@@ -149,13 +151,13 @@ class DuplicateDetectorWorker {
       this.updateProgress(chunkIndex + 1, totalChunks, 'Finding similar names...');
     }
 
-    console.log('Worker: findSimilarNames found', groups.length, 'groups');
+    debugLog('Worker: findSimilarNames found', groups.length, 'groups');
     
     // Debug: log some sample groups
     if (groups.length > 0) {
-      console.log('Worker: Sample similar name groups:');
+      debugLog('Worker: Sample similar name groups:');
       groups.slice(0, 3).forEach((group, index) => {
-        console.log(`Worker: Similar Group ${index + 1}:`, group.map(f => ({
+        debugLog(`Worker: Similar Group ${index + 1}:`, group.map(f => ({
           name: f.name,
           size: f.size,
           formattedSize: this.formatFileSize(f.size || 0)
@@ -192,7 +194,7 @@ class DuplicateDetectorWorker {
 
   // Method 3: Optimized size-based grouping with bucket approach
   findSizeMatches(files, tolerance = 0.01) {
-    console.log('Worker: findSizeMatches called with', files.length, 'files, tolerance:', tolerance);
+    debugLog('Worker: findSizeMatches called with', files.length, 'files, tolerance:', tolerance);
     
     const groups = [];
     const sizeBuckets = new Map();
@@ -264,13 +266,13 @@ class DuplicateDetectorWorker {
       }
     }
 
-    console.log('Worker: findSizeMatches found', groups.length, 'groups');
+    debugLog('Worker: findSizeMatches found', groups.length, 'groups');
     
     // Debug: log some sample groups
     if (groups.length > 0) {
-      console.log('Worker: Sample size groups:');
+      debugLog('Worker: Sample size groups:');
       groups.slice(0, 3).forEach((group, index) => {
-        console.log(`Worker: Size Group ${index + 1}:`, group.map(f => ({
+        debugLog(`Worker: Size Group ${index + 1}:`, group.map(f => ({
           name: f.name,
           size: f.size,
           formattedSize: this.formatFileSize(f.size || 0)
@@ -283,7 +285,7 @@ class DuplicateDetectorWorker {
 
   // Method 4: Hash-based matching
   findHashMatches(files) {
-    console.log('Worker: findHashMatches called with', files.length, 'files');
+    debugLog('Worker: findHashMatches called with', files.length, 'files');
     const groups = new Map();
     let processed = 0;
     let filesWithHash = 0;
@@ -314,13 +316,13 @@ class DuplicateDetectorWorker {
     }
 
     const result = Array.from(groups.values()).filter(group => group.length > 1);
-    console.log('Worker: findHashMatches found', result.length, 'groups from', filesWithHash, 'files with hashes');
+    debugLog('Worker: findHashMatches found', result.length, 'groups from', filesWithHash, 'files with hashes');
     
     // Debug: log some sample groups
     if (result.length > 0) {
-      console.log('Worker: Sample hash groups:');
+      debugLog('Worker: Sample hash groups:');
       result.slice(0, 3).forEach((group, index) => {
-        console.log(`Worker: Hash Group ${index + 1}:`, group.map(f => ({
+        debugLog(`Worker: Hash Group ${index + 1}:`, group.map(f => ({
           name: f.name,
           size: f.size,
           formattedSize: this.formatFileSize(f.size || 0),
@@ -458,16 +460,16 @@ class DuplicateDetectorWorker {
 
   // Main method to find all duplicates with optimized processing
   async findAllDuplicates(files, methods = ['exact', 'similar', 'size']) {
-    console.log('Worker: findAllDuplicates called with:', { filesLength: files.length, methods });
+    debugLog('Worker: findAllDuplicates called with:', { filesLength: files.length, methods });
     
     // Validate input
     if (!Array.isArray(files) || files.length === 0) {
-      console.warn('Worker: findAllDuplicates: No files provided or invalid input');
+      debugWarn('Worker: findAllDuplicates: No files provided or invalid input');
       return [];
     }
     
     if (!Array.isArray(methods) || methods.length === 0) {
-      console.warn('Worker: findAllDuplicates: No methods provided, using defaults');
+      debugWarn('Worker: findAllDuplicates: No methods provided, using defaults');
       methods = ['exact', 'similar', 'size'];
     }
     
@@ -475,7 +477,7 @@ class DuplicateDetectorWorker {
     
     // Process methods in parallel for better performance
     const methodPromises = methods.map(async (method, methodIndex) => {
-      console.log(`Worker: Processing ${method} detection...`);
+      debugLog(`Worker: Processing ${method} detection...`);
       this.updateProgress(methodIndex, methods.length, `Processing ${method} detection...`);
       
       let groups = [];
@@ -494,15 +496,15 @@ class DuplicateDetectorWorker {
             groups = this.findHashMatches(files);
             break;
           default:
-            console.warn(`Worker: Unknown detection method: ${method}`);
+            debugWarn(`Worker: Unknown detection method: ${method}`);
             break;
         }
       } catch (error) {
-        console.error(`Worker: Error in ${method} detection:`, error);
+        debugError(`Worker: Error in ${method} detection:`, error);
         return [];
       }
       
-      console.log(`Worker: ${method} detection found ${groups.length} groups`);
+      debugLog(`Worker: ${method} detection found ${groups.length} groups`);
       
       // Validate groups before adding
       const validGroups = groups.filter(group => 
@@ -527,7 +529,7 @@ class DuplicateDetectorWorker {
       allGroups.push(...groups);
     });
     
-    console.log('Worker: Total groups found:', allGroups.length);
+    debugLog('Worker: Total groups found:', allGroups.length);
     this.updateProgress(methods.length, methods.length, 'Duplicate detection completed');
     return allGroups;
   }
@@ -571,6 +573,6 @@ self.onmessage = async function(e) {
       break;
       
     default:
-      console.warn('Unknown message type:', type);
+      debugWarn('Unknown message type:', type);
   }
 }; 

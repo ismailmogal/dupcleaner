@@ -1,5 +1,6 @@
 import { detectAIDuplicates } from './aiDuplicateDetector';
 import { realFileTestData, expectedTestResults, testScenarios } from './realFileTestData';
+import { debugLog, debugWarn, debugError } from './idbState';
 
 export class AITestSuite {
   constructor() {
@@ -14,7 +15,7 @@ export class AITestSuite {
 
   // Run all AI tests
   async runAllTests() {
-    console.log('🤖 Starting AI Feature Validation Tests with Real File Data...');
+    debugLog('🤖 Starting AI Feature Validation Tests with Real File Data...');
     
     const tests = [
       this.testVisualSimilarity.bind(this),
@@ -31,7 +32,7 @@ export class AITestSuite {
       try {
         await test();
       } catch (error) {
-        console.error(`❌ Test failed: ${test.name}`, error);
+        debugError(`❌ Test failed: ${test.name}`, error);
         this.testResults.push({
           testName: test.name,
           status: 'FAILED',
@@ -53,7 +54,7 @@ export class AITestSuite {
 
   // Test visual similarity detection with real image data
   async testVisualSimilarity() {
-    console.log('🖼️ Testing Visual Similarity Detection with Real Images...');
+    debugLog('🖼️ Testing Visual Similarity Detection with Real Images...');
     
     const imageFiles = realFileTestData.images;
     const results = await detectAIDuplicates(imageFiles, { method: 'visual' });
@@ -89,12 +90,12 @@ export class AITestSuite {
       timestamp: new Date().toISOString()
     });
 
-    console.log(`✅ Visual Similarity: ${exactDuplicates.length} exact + ${similarFiles.length} similar groups detected`);
+    debugLog(`✅ Visual Similarity: ${exactDuplicates.length} exact + ${similarFiles.length} similar groups detected`);
   }
 
   // Test content analysis with real document data
   async testContentAnalysis() {
-    console.log('📄 Testing Content Analysis with Real Documents...');
+    debugLog('📄 Testing Content Analysis with Real Documents...');
     
     const documentFiles = realFileTestData.documents;
     const results = await detectAIDuplicates(documentFiles, { method: 'content' });
@@ -130,12 +131,12 @@ export class AITestSuite {
       timestamp: new Date().toISOString()
     });
 
-    console.log(`✅ Content Analysis: ${contentDuplicates.length} exact + ${similarContent.length} similar groups detected`);
+    debugLog(`✅ Content Analysis: ${contentDuplicates.length} exact + ${similarContent.length} similar groups detected`);
   }
 
   // Test video comparison with real video data
   async testVideoComparison() {
-    console.log('🎥 Testing Video Comparison with Real Videos...');
+    debugLog('🎥 Testing Video Comparison with Real Videos...');
     
     const videoFiles = realFileTestData.videos;
     const results = await detectAIDuplicates(videoFiles, { method: 'video' });
@@ -171,12 +172,12 @@ export class AITestSuite {
       timestamp: new Date().toISOString()
     });
 
-    console.log(`✅ Video Comparison: ${videoDuplicates.length} exact + ${similarVideos.length} similar groups detected`);
+    debugLog(`✅ Video Comparison: ${videoDuplicates.length} exact + ${similarVideos.length} similar groups detected`);
   }
 
   // Test hybrid detection across all file types
   async testHybridDetection() {
-    console.log('🔀 Testing Hybrid Detection Across All File Types...');
+    debugLog('🔀 Testing Hybrid Detection Across All File Types...');
     
     const allFiles = [...realFileTestData.images, ...realFileTestData.documents, ...realFileTestData.videos];
     const results = await detectAIDuplicates(allFiles, { method: 'hybrid' });
@@ -199,12 +200,12 @@ export class AITestSuite {
       timestamp: new Date().toISOString()
     });
 
-    console.log(`✅ Hybrid Detection: ${hybridDuplicates.length}/${expectedHybrid.length} groups detected`);
+    debugLog(`✅ Hybrid Detection: ${hybridDuplicates.length}/${expectedHybrid.length} groups detected`);
   }
 
   // Test confidence scoring with real data
   async testConfidenceScoring() {
-    console.log('🎯 Testing Confidence Scoring with Real Data...');
+    debugLog('🎯 Testing Confidence Scoring with Real Data...');
     
     const allFiles = [...realFileTestData.images, ...realFileTestData.documents, ...realFileTestData.videos];
     const results = await detectAIDuplicates(allFiles, { method: 'hybrid' });
@@ -232,12 +233,12 @@ export class AITestSuite {
       timestamp: new Date().toISOString()
     });
 
-    console.log(`✅ Confidence Scoring: Avg ${avgConfidence.toFixed(2)}, ${highConfidenceCount} high, ${mediumConfidenceCount} medium confidence results`);
+    debugLog(`✅ Confidence Scoring: Avg ${avgConfidence.toFixed(2)}, ${highConfidenceCount} high, ${mediumConfidenceCount} medium confidence results`);
   }
 
   // Test performance metrics with real data
   async testPerformanceMetrics() {
-    console.log('⚡ Testing Performance Metrics with Real Data...');
+    debugLog('⚡ Testing Performance Metrics with Real Data...');
     
     const startTime = performance.now();
     const allFiles = [...realFileTestData.images, ...realFileTestData.documents, ...realFileTestData.videos];
@@ -260,12 +261,12 @@ export class AITestSuite {
       timestamp: new Date().toISOString()
     });
 
-    console.log(`✅ Performance: ${processingTime.toFixed(0)}ms for ${allFiles.length} files (${filesPerSecond.toFixed(1)} files/sec)`);
+    debugLog(`✅ Performance: ${processingTime.toFixed(0)}ms for ${allFiles.length} files (${filesPerSecond.toFixed(1)} files/sec)`);
   }
 
   // Test edge cases with real data
   async testEdgeCases() {
-    console.log('🔍 Testing Edge Cases with Real Data...');
+    debugLog('🔍 Testing Edge Cases with Real Data...');
     
     const edgeCases = [
       // Empty file list
@@ -318,12 +319,12 @@ export class AITestSuite {
       timestamp: new Date().toISOString()
     });
 
-    console.log(`✅ Edge Cases: ${passedTests}/${edgeCases.length} tests passed`);
+    debugLog(`✅ Edge Cases: ${passedTests}/${edgeCases.length} tests passed`);
   }
 
   // Test real-world scenarios
   async testRealWorldScenarios() {
-    console.log('🌍 Testing Real-World Scenarios...');
+    debugLog('🌍 Testing Real-World Scenarios...');
     
     const scenarios = [
       {
@@ -380,7 +381,7 @@ export class AITestSuite {
       timestamp: new Date().toISOString()
     });
 
-    console.log(`✅ Real-World Scenarios: ${totalPassed}/${scenarios.length} scenarios passed`);
+    debugLog(`✅ Real-World Scenarios: ${totalPassed}/${scenarios.length} scenarios passed`);
   }
 
   // Calculate precision (true positives / (true positives + false positives))
@@ -430,44 +431,44 @@ export class AITestSuite {
 
   // Generate comprehensive test report
   generateTestReport() {
-    console.log('\n📊 AI Feature Test Report (Real File Data)');
-    console.log('=' .repeat(60));
+    debugLog('\n📊 AI Feature Test Report (Real File Data)');
+    debugLog('=' .repeat(60));
     
     this.testResults.forEach(result => {
       const status = result.status === 'PASSED' ? '✅' : '❌';
-      console.log(`${status} ${result.testName}`);
+      debugLog(`${status} ${result.testName}`);
       
       if (result.precision !== undefined) {
-        console.log(`   Precision: ${(result.precision * 100).toFixed(1)}%`);
-        console.log(`   Recall: ${(result.recall * 100).toFixed(1)}%`);
-        console.log(`   F1 Score: ${(result.f1Score * 100).toFixed(1)}%`);
+        debugLog(`   Precision: ${(result.precision * 100).toFixed(1)}%`);
+        debugLog(`   Recall: ${(result.recall * 100).toFixed(1)}%`);
+        debugLog(`   F1 Score: ${(result.f1Score * 100).toFixed(1)}%`);
         
         if (result.similarPrecision !== undefined) {
-          console.log(`   Similar Precision: ${(result.similarPrecision * 100).toFixed(1)}%`);
-          console.log(`   Similar Recall: ${(result.similarRecall * 100).toFixed(1)}%`);
-          console.log(`   Similar F1 Score: ${(result.similarF1Score * 100).toFixed(1)}%`);
+          debugLog(`   Similar Precision: ${(result.similarPrecision * 100).toFixed(1)}%`);
+          debugLog(`   Similar Recall: ${(result.similarRecall * 100).toFixed(1)}%`);
+          debugLog(`   Similar F1 Score: ${(result.similarF1Score * 100).toFixed(1)}%`);
         }
       }
       
       if (result.processingTimeMs !== undefined) {
-        console.log(`   Processing Time: ${result.processingTimeMs.toFixed(0)}ms`);
-        console.log(`   Files/Second: ${result.filesPerSecond.toFixed(1)}`);
+        debugLog(`   Processing Time: ${result.processingTimeMs.toFixed(0)}ms`);
+        debugLog(`   Files/Second: ${result.filesPerSecond.toFixed(1)}`);
       }
       
       if (result.passedTests !== undefined) {
-        console.log(`   Passed: ${result.passedTests}/${result.totalTests}`);
+        debugLog(`   Passed: ${result.passedTests}/${result.totalTests}`);
       }
       
       if (result.passedScenarios !== undefined) {
-        console.log(`   Scenarios Passed: ${result.passedScenarios}/${result.totalScenarios}`);
+        debugLog(`   Scenarios Passed: ${result.passedScenarios}/${result.totalScenarios}`);
       }
     });
     
-    console.log('\n📈 Overall Metrics');
-    console.log(`   Overall Accuracy: ${(this.accuracyMetrics.overallAccuracy * 100).toFixed(1)}%`);
-    console.log(`   Average Precision: ${(this.accuracyMetrics.precision * 100).toFixed(1)}%`);
-    console.log(`   Average Recall: ${(this.accuracyMetrics.recall * 100).toFixed(1)}%`);
-    console.log(`   Average F1 Score: ${(this.accuracyMetrics.f1Score * 100).toFixed(1)}%`);
+    debugLog('\n📈 Overall Metrics');
+    debugLog(`   Overall Accuracy: ${(this.accuracyMetrics.overallAccuracy * 100).toFixed(1)}%`);
+    debugLog(`   Average Precision: ${(this.accuracyMetrics.precision * 100).toFixed(1)}%`);
+    debugLog(`   Average Recall: ${(this.accuracyMetrics.recall * 100).toFixed(1)}%`);
+    debugLog(`   Average F1 Score: ${(this.accuracyMetrics.f1Score * 100).toFixed(1)}%`);
   }
 
   // Get test summary

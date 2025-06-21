@@ -1,3 +1,5 @@
+import { debugLog, debugWarn, debugError } from './idbState';
+
 // High-performance duplicate detection algorithms
 export class DuplicateDetector {
   constructor() {
@@ -25,7 +27,7 @@ export class DuplicateDetector {
 
   // Method 1: Exact name and size match (O(n) with hash map)
   findExactMatches(files) {
-    console.log('findExactMatches called with', files.length, 'files');
+    debugLog('findExactMatches called with', files.length, 'files');
     const groups = new Map();
     let processed = 0;
     
@@ -49,13 +51,13 @@ export class DuplicateDetector {
     }
 
     const result = Array.from(groups.values()).filter(group => group.length > 1);
-    console.log('findExactMatches found', result.length, 'groups');
+    debugLog('findExactMatches found', result.length, 'groups');
     return result;
   }
 
   // Method 2: Optimized name similarity with chunked processing
   findSimilarNames(files, threshold = 0.8) {
-    console.log('findSimilarNames called with', files.length, 'files, threshold:', threshold);
+    debugLog('findSimilarNames called with', files.length, 'files, threshold:', threshold);
     const groups = [];
     const processed = new Set();
     
@@ -147,7 +149,7 @@ export class DuplicateDetector {
       this.updateProgress(chunkIndex + 1, totalChunks, 'Finding similar names...');
     }
 
-    console.log('findSimilarNames found', groups.length, 'groups');
+    debugLog('findSimilarNames found', groups.length, 'groups');
     return groups;
   }
 
@@ -177,7 +179,7 @@ export class DuplicateDetector {
 
   // Method 3: Optimized size-based grouping with bucket approach
   findSizeMatches(files, tolerance = 0.01) {
-    console.log('findSizeMatches called with', files.length, 'files, tolerance:', tolerance);
+    debugLog('findSizeMatches called with', files.length, 'files, tolerance:', tolerance);
     
     const groups = [];
     const sizeBuckets = new Map();
@@ -253,13 +255,13 @@ export class DuplicateDetector {
       }
     }
 
-    console.log('findSizeMatches found', groups.length, 'groups');
+    debugLog('findSizeMatches found', groups.length, 'groups');
     return groups;
   }
 
   // Method 4: Hash-based matching (already optimized)
   findHashMatches(files) {
-    console.log('findHashMatches called with', files.length, 'files');
+    debugLog('findHashMatches called with', files.length, 'files');
     const groups = new Map();
     let processed = 0;
     let filesWithHash = 0;
@@ -292,7 +294,7 @@ export class DuplicateDetector {
     }
 
     const result = Array.from(groups.values()).filter(group => group.length > 1);
-    console.log('findHashMatches found', result.length, 'groups from', filesWithHash, 'files with hashes');
+    debugLog('findHashMatches found', result.length, 'groups from', filesWithHash, 'files with hashes');
     return result;
   }
 
@@ -429,16 +431,16 @@ export class DuplicateDetector {
 
   // Main method to find all duplicates with optimized processing
   async findAllDuplicates(files, methods = ['exact', 'similar', 'size'], chunkSize = 5000) {
-    console.log('findAllDuplicates called with:', { filesLength: files.length, methods });
+    debugLog('findAllDuplicates called with:', { filesLength: files.length, methods });
     
     // Validate input
     if (!Array.isArray(files) || files.length === 0) {
-      console.warn('findAllDuplicates: No files provided or invalid input');
+      debugWarn('findAllDuplicates: No files provided or invalid input');
       return [];
     }
     
     if (!Array.isArray(methods) || methods.length === 0) {
-      console.warn('findAllDuplicates: No methods provided, using defaults');
+      debugWarn('findAllDuplicates: No methods provided, using defaults');
       methods = ['exact', 'similar', 'size'];
     }
     
@@ -452,7 +454,7 @@ export class DuplicateDetector {
     const methodPromises = methods.map(async (method, methodIndex) => {
       if (this.cancelToken.cancelled) return [];
       
-      console.log(`Processing ${method} detection...`);
+      debugLog(`Processing ${method} detection...`);
       this.updateProgress(methodIndex, methods.length, `Processing ${method} detection...`);
       
       let groups = [];
@@ -471,15 +473,15 @@ export class DuplicateDetector {
             groups = this.findHashMatches(files);
             break;
           default:
-            console.warn(`Unknown detection method: ${method}`);
+            debugWarn(`Unknown detection method: ${method}`);
             break;
         }
       } catch (error) {
-        console.error(`Error in ${method} detection:`, error);
+        debugError(`Error in ${method} detection:`, error);
         return [];
       }
       
-      console.log(`${method} detection found ${groups.length} groups`);
+      debugLog(`${method} detection found ${groups.length} groups`);
       
       // Validate groups before adding
       const validGroups = groups.filter(group => 
@@ -504,7 +506,7 @@ export class DuplicateDetector {
       allGroups.push(...groups);
     });
 
-    console.log('Total groups found:', allGroups.length);
+    debugLog('Total groups found:', allGroups.length);
     this.updateProgress(methods.length, methods.length, 'Duplicate detection completed');
     return allGroups;
   }

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useTheme } from '../contexts/ThemeContext';
 import './FileBrowser.css';
+import { debugLog, debugWarn, debugError } from '../utils/idbState';
 
 function FileBrowser({ 
   files, 
@@ -24,21 +25,21 @@ function FileBrowser({
   const [sortOrder, setSortOrder] = useState('asc');
 
   useEffect(() => {
-    console.log('FileBrowser useEffect triggered');
-    console.log('Files received:', files?.length || 0);
-    console.log('Sample files:', files?.slice(0, 3));
+    debugLog('FileBrowser useEffect triggered');
+    debugLog('Files received:', files?.length || 0);
+    debugLog('Sample files:', files?.slice(0, 3));
     
     if (files && files.length > 0) {
       const folderItems = files.filter(item => item.folder);
       const fileItems = files.filter(item => !item.folder);
       
-      console.log('Folders found:', folderItems.length);
-      console.log('Files found:', fileItems.length);
+      debugLog('Folders found:', folderItems.length);
+      debugLog('Files found:', fileItems.length);
       
       setFolders(folderItems);
       setFileItems(fileItems);
     } else {
-      console.log('No files available');
+      debugLog('No files available');
       setFolders([]);
       setFileItems([]);
     }
@@ -287,25 +288,25 @@ function FileBrowser({
     
     return (
       <div className="items-details">
-        <div className={headerClass}>
-          <div className="details-column" onClick={() => handleSort('name')}>
-            Name {sortBy === 'name' && (sortOrder === 'asc' ? '↑' : '↓')}
+        <div className={headerClass} style={{borderRadius: '8px 8px 0 0', background: 'var(--bg-secondary, #f8f9fa)', boxShadow: '0 2px 8px rgba(0,0,0,0.03)'}}>
+          <div className="details-column sticky-col" onClick={() => handleSort('name')} title="Sort by Name" style={{display:'flex',alignItems:'center',justifyContent:'flex-start'}}>
+            Name {sortBy === 'name' && <span className="sort-indicator" style={{color:'#0078d4',marginLeft:4}}>{sortOrder === 'asc' ? '↑' : '↓'}</span>}
           </div>
-          <div className="details-column" onClick={() => handleSort('type')}>
-            Type {sortBy === 'type' && (sortOrder === 'asc' ? '↑' : '↓')}
+          <div className="details-column" onClick={() => handleSort('type')} title="Sort by Type">
+            <span role="img" aria-label="Type">📄</span> Type {sortBy === 'type' && <span className="sort-indicator" style={{color:'#0078d4',marginLeft:4}}>{sortOrder === 'asc' ? '↑' : '↓'}</span>}
           </div>
           {showFileSizes && (
-            <div className="details-column" onClick={() => handleSort('size')}>
-              Size {sortBy === 'size' && (sortOrder === 'asc' ? '↑' : '↓')}
+            <div className="details-column" onClick={() => handleSort('size')} title="Sort by Size">
+              <span role="img" aria-label="Size">📦</span> Size {sortBy === 'size' && <span className="sort-indicator" style={{color:'#0078d4',marginLeft:4}}>{sortOrder === 'asc' ? '↑' : '↓'}</span>}
             </div>
           )}
           {showFileDates && (
-            <div className="details-column" onClick={() => handleSort('date')}>
-              Date Modified {sortBy === 'date' && (sortOrder === 'asc' ? '↑' : '↓')}
+            <div className="details-column" onClick={() => handleSort('date')} title="Sort by Date Modified">
+              <span role="img" aria-label="Date Modified">🕒</span> Date Modified {sortBy === 'date' && <span className="sort-indicator" style={{color:'#0078d4',marginLeft:4}}>{sortOrder === 'asc' ? '↑' : '↓'}</span>}
             </div>
           )}
           {itemType === 'folder' && onAddToComparison && (
-            <div className="details-column-actions">Actions</div>
+            <div className="details-column-actions" title="Actions"><span role="img" aria-label="Actions">⚡</span> Actions</div>
           )}
         </div>
         <div className="details-content">
@@ -316,7 +317,7 @@ function FileBrowser({
               onClick={() => itemType === 'folder' ? handleFolderClick(item) : handleFileClick(item)}
             >
               <div className="details-item-icon">{getFileIcon(item)}</div>
-              <div className="details-item-name">{item.name}</div>
+              <div className="details-item-name sticky-col" title={item.name}>{item.name}</div>
               <div className="details-item-type">{getFileType(item)}</div>
               {showFileSizes && (
                 <div className="details-item-size">
@@ -355,8 +356,8 @@ function FileBrowser({
   const sortedFolders = sortItems(folders);
   const sortedFiles = sortItems(fileItems);
 
-  console.log('FileBrowser render - Folders:', sortedFolders.length, 'Files:', sortedFiles.length);
-  console.log('Selected files:', selectedFiles?.size || 0);
+  debugLog('FileBrowser render - Folders:', sortedFolders.length, 'Files:', sortedFiles.length);
+  debugLog('Selected files:', selectedFiles?.size || 0);
 
   return (
     <div className={`file-browser ${compactMode ? 'compact-mode' : ''}`}>

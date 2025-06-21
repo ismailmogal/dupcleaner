@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { debugLog, debugWarn, debugError } from '../utils/idbState';
 
 // Simple analytics tracking (GDPR compliant)
 class Analytics {
@@ -11,7 +12,7 @@ class Analytics {
     this.consent = hasConsent;
     if (hasConsent) {
       // Initialize analytics services here
-      console.log('Analytics consent granted');
+      debugLog('Analytics consent granted');
     }
   }
 
@@ -32,7 +33,7 @@ class Analytics {
       window.gtag('event', eventName, properties);
     }
     
-    console.log('Analytics event:', event);
+    debugLog('Analytics event:', event);
   }
 
   trackPageView(pageName) {

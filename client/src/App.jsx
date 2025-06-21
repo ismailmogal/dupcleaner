@@ -20,6 +20,10 @@ import { msalIdbCachePlugin } from './utils/msalIdbCache';
 import FileExplorerGrid from './components/FileExplorerGrid';
 import { formatFileSize, getFileIcon, getFileType } from './utils/fileUtils';
 import { useAuth } from './hooks/useAuth';
+import debugEnv from './debug-env';
+
+// Debug environment variables
+debugEnv();
 
 // Pages
 import BrowsePage from './pages/BrowsePage';
@@ -55,15 +59,31 @@ function AppLayout() {
   const [showPreferences, setShowPreferences] = useState(false);
   const navigate = useNavigate();
   
+  console.log('AppLayout rendered - isAuthenticated:', isAuthenticated, 'isInitialized:', isInitialized);
+  
   // Initialize MSAL
   useEffect(() => {
-    instance.initialize().then(() => setIsInitialized(true));
+    console.log('Initializing MSAL...');
+    instance.initialize().then(() => {
+      console.log('MSAL initialized successfully');
+      setIsInitialized(true);
+    }).catch(error => {
+      console.error('MSAL initialization failed:', error);
+    });
   }, [instance]);
 
   if (!isInitialized) {
-    return <LoadingSpinner />;
+    console.log('Showing loading spinner - not initialized');
+    return (
+      <div style={{ padding: '2rem', textAlign: 'center' }}>
+        <h2>Loading OneDrive Duplicate Finder...</h2>
+        <LoadingSpinner />
+        <p>Initializing application...</p>
+      </div>
+    );
   }
 
+  console.log('Rendering main app layout');
   return (
     <div className={`App ${theme}`}>
       <header className="App-header">

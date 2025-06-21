@@ -36,9 +36,6 @@ export default defineConfig(({ mode }) => ({
             './src/components/ErrorBoundary.jsx',
             './src/components/AnalyticsConsent.jsx'
           ],
-          'contexts': [
-            './src/contexts/ThemeContext.jsx'
-          ],
           'utils': [
             './src/utils/aiDuplicateDetector.jsx',
             './src/utils/aiTestSuite.jsx',

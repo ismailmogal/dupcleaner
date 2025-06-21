@@ -8,6 +8,12 @@ class MicrosoftGraphService {
     this.clientSecret = process.env.MICROSOFT_CLIENT_SECRET;
     this.tenantId = process.env.MICROSOFT_TENANT_ID || 'consumers';
     
+    // Debug logging
+    console.log('🔧 Microsoft Graph Configuration:');
+    console.log('  - CLIENT_ID:', this.clientId ? 'SET' : 'NOT SET');
+    console.log('  - CLIENT_SECRET:', this.clientSecret ? 'SET' : 'NOT SET');
+    console.log('  - TENANT_ID:', this.tenantId);
+    
     if (!this.clientId || !this.clientSecret) {
       console.warn('Microsoft Graph credentials not configured. Using mock data.');
       this.isConfigured = false;
@@ -15,6 +21,7 @@ class MicrosoftGraphService {
     }
 
     this.isConfigured = true;
+    console.log('✅ Microsoft Graph configured successfully');
     
     // Initialize MSAL for server-side authentication
     this.msalConfig = {

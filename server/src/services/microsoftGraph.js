@@ -173,7 +173,13 @@ class MicrosoftGraphService {
     try {
       if (!this.isConfigured) {
         console.log('Mock: Deleting files:', fileIds);
-        return { success: true, deletedCount: fileIds.length };
+        // Return the same structure as real implementation
+        const results = fileIds.map(fileId => ({ id: fileId, success: true }));
+        return { 
+          success: true, 
+          deletedCount: fileIds.length,
+          results
+        };
       }
 
       const graphClient = this.createGraphClient(accessToken);

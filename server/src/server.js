@@ -1,5 +1,7 @@
 const express = require('express');
 const path = require('path');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
 require('dotenv').config();
 
 // Import services
@@ -9,6 +11,40 @@ const aiDuplicateDetector = require('./services/aiDuplicateDetector');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
+
+// --- SECURITY MIDDLEWARE ---
+// Security headers
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      scriptSrc: ["'self'"],
+      imgSrc: ["'self'", "data:", "https:"],
+      connectSrc: ["'self'", "https://login.microsoftonline.com", "https://graph.microsoft.com"],
+      fontSrc: ["'self'"],
+      objectSrc: ["'none'"],
+      mediaSrc: ["'self'"],
+      frameSrc: ["'none'"],
+    },
+  },
+  crossOriginEmbedderPolicy: false, // Allow cross-origin requests for OneDrive integration
+}));
+
+// Rate limiting
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // limit each IP to 100 requests per windowMs
+  message: {
+    error: 'Too many requests from this IP, please try again later.',
+    retryAfter: Math.ceil(15 * 60 / 1000) // 15 minutes in seconds
+  },
+  standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
+  legacyHeaders: false, // Disable the `X-RateLimit-*` headers
+});
+
+// Apply rate limiting to all API routes
+app.use('/api/', limiter);
 
 // --- FINAL, CORRECT CORS SOLUTION ---
 app.use((req, res, next) => {
@@ -32,6 +68,31 @@ app.use((req, res, next) => {
 app.use(express.json({ type: ['application/json', 'text/plain'] }));
 app.use(express.urlencoded({ extended: true }));
 
+// Input validation middleware
+const validateFileIds = (req, res, next) => {
+  const { fileIds } = req.body;
+  if (fileIds && (!Array.isArray(fileIds) || fileIds.length === 0)) {
+    return res.status(400).json({ error: 'Invalid file IDs: must be a non-empty array' });
+  }
+  next();
+};
+
+const validateFiles = (req, res, next) => {
+  const { files } = req.body;
+  if (files && (!Array.isArray(files) || files.length === 0)) {
+    return res.status(400).json({ error: 'Invalid files: must be a non-empty array' });
+  }
+  next();
+};
+
+const validateAuthCode = (req, res, next) => {
+  const { code } = req.body;
+  if (!code || typeof code !== 'string' || code.trim().length === 0) {
+    return res.status(400).json({ error: 'Authorization code is required and must be a non-empty string' });
+  }
+  next();
+};
+
 // DEBUG logging helper
 function debugLog(...args) {
   if (process.env.DEBUG) {
@@ -49,6 +110,27 @@ app.use((req, res, next) => {
   debugLog(`${new Date().toISOString()} - ${req.method} ${req.path}`);
   next();
 });
+
+// Security logging middleware
+const securityLog = (req, res, next) => {
+  const clientIP = req.ip || req.connection.remoteAddress;
+  const userAgent = req.get('User-Agent');
+  const timestamp = new Date().toISOString();
+  
+  // Log suspicious activities
+  if (req.path.includes('/api/') && !req.headers.authorization) {
+    console.warn(`🚨 SECURITY WARNING: Unauthorized API access attempt from ${clientIP} at ${timestamp}`);
+  }
+  
+  // Log file deletion attempts
+  if (req.method === 'DELETE' && req.path === '/api/files') {
+    console.log(`🗑️ FILE DELETION: ${clientIP} attempting to delete files at ${timestamp}`);
+  }
+  
+  next();
+};
+
+app.use(securityLog);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
@@ -121,15 +203,11 @@ app.get('/api/files', async (req, res) => {
 });
 
 // Duplicate detection endpoint
-app.post('/api/duplicates', async (req, res) => {
+app.post('/api/duplicates', validateFiles, async (req, res) => {
   try {
     const { files, method = 'hash' } = req.body;
     const accessToken = req.headers.authorization?.replace('Bearer ', '');
     
-    if (!files || !Array.isArray(files)) {
-      return res.status(400).json({ error: 'Files array is required' });
-    }
-
     if (!accessToken) {
       return res.status(401).json({ error: 'Access token required' });
     }
@@ -154,15 +232,11 @@ app.post('/api/duplicates', async (req, res) => {
 });
 
 // Delete files endpoint
-app.delete('/api/files', async (req, res) => {
+app.delete('/api/files', validateFileIds, async (req, res) => {
   try {
     const { fileIds } = req.body;
     const accessToken = req.headers.authorization?.replace('Bearer ', '');
     
-    if (!fileIds || !Array.isArray(fileIds)) {
-      return res.status(400).json({ error: 'File IDs array is required' });
-    }
-
     if (!accessToken) {
       return res.status(401).json({ error: 'Access token required' });
     }
@@ -182,14 +256,10 @@ app.delete('/api/files', async (req, res) => {
 });
 
 // Microsoft authentication endpoint
-app.post('/api/auth/login', async (req, res) => {
+app.post('/api/auth/login', validateAuthCode, async (req, res) => {
   try {
     const { code, redirectUri } = req.body;
     
-    if (!code) {
-      return res.status(400).json({ error: 'Authorization code is required' });
-    }
-
     const accessToken = await microsoftGraphService.getAccessTokenFromCode(code, redirectUri);
     const userInfo = await microsoftGraphService.getUserInfo(accessToken);
     
@@ -208,13 +278,11 @@ app.post('/api/auth/login', async (req, res) => {
 });
 
 // AI-powered duplicate detection endpoint
-app.post('/api/ai-duplicates', async (req, res) => {
+app.post('/api/ai-duplicates', validateFiles, async (req, res) => {
   try {
     const { files } = req.body;
     const accessToken = req.headers.authorization?.replace('Bearer ', '');
-    if (!files || !Array.isArray(files)) {
-      return res.status(400).json({ error: 'Files array is required' });
-    }
+    
     if (!accessToken) {
       return res.status(401).json({ error: 'Access token required' });
     }
@@ -332,9 +400,14 @@ app.get('/api/health-check', (req, res) => {
 // Error handling middleware
 app.use((err, req, res, next) => {
   debugError('Error:', err);
+  
+  // Don't expose internal error details in production
+  const isProduction = process.env.NODE_ENV === 'production';
+  
   res.status(500).json({ 
     error: 'Internal server error',
-    message: process.env.NODE_ENV === 'development' ? err.message : 'Something went wrong'
+    message: isProduction ? 'Something went wrong' : err.message,
+    ...(isProduction ? {} : { stack: err.stack })
   });
 });
 

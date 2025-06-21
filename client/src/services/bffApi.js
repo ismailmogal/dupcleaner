@@ -46,6 +46,7 @@ class BffApiService {
 
   async request(endpoint, options = {}) {
     const url = `${this.baseUrl}${endpoint}`;
+    console.log('🌐 API Request:', url); // Debug log
     const config = {
       headers: {
         'Content-Type': 'application/json',

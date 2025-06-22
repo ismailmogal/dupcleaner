@@ -2,15 +2,59 @@ const express = require('express');
 const path = require('path');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
+const mongoose = require('mongoose');
+const passport = require('passport');
+const session = require('express-session');
 require('dotenv').config();
 
 // Import services
 const microsoftGraphService = require('./services/microsoftGraph');
 const duplicateDetector = require('./services/duplicateDetector');
 const aiDuplicateDetector = require('./services/aiDuplicateDetector');
+const enhancedAIDetector = require('./services/enhancedAIDetector');
+
+// Import authentication
+const authService = require('./services/authService');
+const { 
+  authenticateToken, 
+  optionalAuth, 
+  requireRole, 
+  requireSubscription, 
+  checkUsageLimit,
+  apiRateLimit,
+  logRequest,
+  corsOptions 
+} = require('./middleware/auth');
+
+// Import routes
+const authRoutes = require('./routes/auth');
+
+// Import Phase 1 modules
+const { isFeatureEnabled, getEnabledFeatures } = require('./config/features');
+const { requireFeature } = require('./middleware/featureFlags');
+const User = require('./models/User');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
+
+// --- DATABASE CONNECTION ---
+const connectDB = async () => {
+  try {
+    await mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/onedrive-duplicate-finder', {
+      useNewUrlParser: true,
+      useUnifiedTopology: true,
+    });
+    console.log('✅ Connected to MongoDB');
+    return true;
+  } catch (error) {
+    console.error('❌ MongoDB connection error:', error.message);
+    console.log('⚠️ Running in mock mode - some features may be limited');
+    return false;
+  }
+};
+
+// Initialize database connection
+connectDB();
 
 // --- SECURITY MIDDLEWARE ---
 // Security headers
@@ -31,26 +75,33 @@ app.use(helmet({
   crossOriginEmbedderPolicy: false, // Allow cross-origin requests for OneDrive integration
 }));
 
+// Session configuration for Passport
+app.use(session({
+  secret: process.env.SESSION_SECRET || 'your-super-secret-session-key-change-in-production',
+  resave: false,
+  saveUninitialized: false,
+  cookie: {
+    secure: process.env.NODE_ENV === 'production',
+    httpOnly: true,
+    maxAge: 24 * 60 * 60 * 1000 // 24 hours
+  }
+}));
+
+// Initialize Passport
+app.use(passport.initialize());
+app.use(passport.session());
+
 // Rate limiting
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // limit each IP to 100 requests per windowMs
-  message: {
-    error: 'Too many requests from this IP, please try again later.',
-    retryAfter: Math.ceil(15 * 60 / 1000) // 15 minutes in seconds
-  },
-  standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
-  legacyHeaders: false, // Disable the `X-RateLimit-*` headers
-});
+const limiter = rateLimit(apiRateLimit);
 
 // Apply rate limiting to all API routes
 app.use('/api/', limiter);
 
-// --- FINAL, CORRECT CORS SOLUTION ---
+// --- CORS CONFIGURATION ---
 app.use((req, res, next) => {
   // Set CORS headers for all responses
   res.setHeader('Access-Control-Allow-Origin', process.env.CLIENT_URL || 'http://localhost:3000');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS, DELETE');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
   res.setHeader('Access-Control-Allow-Credentials', 'true');
 
@@ -63,10 +114,11 @@ app.use((req, res, next) => {
 });
 
 // Middleware
-// WORKAROUND: For a stubborn CORS preflight issue, the browser sends 'text/plain'.
-// We temporarily accept it here to ensure the body gets parsed correctly.
 app.use(express.json({ type: ['application/json', 'text/plain'] }));
 app.use(express.urlencoded({ extended: true }));
+
+// Apply logging middleware
+app.use(logRequest);
 
 // Input validation middleware
 const validateFileIds = (req, res, next) => {
@@ -105,12 +157,6 @@ function debugError(...args) {
   }
 }
 
-// Basic logging middleware
-app.use((req, res, next) => {
-  debugLog(`${new Date().toISOString()} - ${req.method} ${req.path}`);
-  next();
-});
-
 // Security logging middleware
 const securityLog = (req, res, next) => {
   const clientIP = req.ip || req.connection.remoteAddress;
@@ -132,6 +178,9 @@ const securityLog = (req, res, next) => {
 
 app.use(securityLog);
 
+// --- AUTHENTICATION ROUTES ---
+app.use('/api/auth', authRoutes);
+
 // Health check endpoint
 app.get('/api/health', (req, res) => {
   res.json({ 
@@ -140,7 +189,12 @@ app.get('/api/health', (req, res) => {
     uptime: process.uptime(),
     services: {
       microsoftGraph: microsoftGraphService.isConfigured ? 'configured' : 'mock',
-      duplicateDetector: 'ready'
+      duplicateDetector: 'ready',
+      database: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected'
+    },
+    database: {
+      status: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected',
+      readyState: mongoose.connection.readyState
     }
   });
 });
@@ -153,18 +207,19 @@ app.get('/api/hello', (req, res) => {
   });
 });
 
-// User info endpoint
-app.get('/api/user', async (req, res) => {
+// User info endpoint (updated to use new auth system)
+app.get('/api/user', authenticateToken, async (req, res) => {
   try {
-    const accessToken = req.headers.authorization?.replace('Bearer ', '');
-    
-    if (!accessToken) {
-      return res.status(401).json({ error: 'Access token required' });
-    }
-
-    const userInfo = await microsoftGraphService.getUserInfo(accessToken);
+    // Return user info from our database
     res.json({
-      ...userInfo,
+      id: req.user.id,
+      email: req.user.email,
+      firstName: req.user.firstName,
+      lastName: req.user.lastName,
+      displayName: req.user.displayName,
+      avatar: req.user.avatar,
+      subscription: req.user.subscription,
+      preferences: req.user.preferences,
       isAuthenticated: true
     });
   } catch (error) {
@@ -176,238 +231,308 @@ app.get('/api/user', async (req, res) => {
   }
 });
 
-// Files endpoint
-app.get('/api/files', async (req, res) => {
+// Feature flags endpoint (admin only)
+app.get('/api/features', authenticateToken, requireRole(['enterprise', 'admin']), (req, res) => {
   try {
-    const accessToken = req.headers.authorization?.replace('Bearer ', '');
-    const folderId = req.query.folderId;
+    const features = getEnabledFeatures();
+    res.json({ features });
+  } catch (error) {
+    console.error('Error getting features:', error);
+    res.status(500).json({ error: 'Failed to get features' });
+  }
+});
+
+// Update feature flags endpoint (admin only)
+app.post('/api/features', authenticateToken, requireRole(['enterprise', 'admin']), (req, res) => {
+  try {
+    const { featureName, enabled } = req.body;
     
-    if (!accessToken) {
-      return res.status(401).json({ error: 'Access token required' });
+    if (typeof featureName !== 'string' || typeof enabled !== 'boolean') {
+      return res.status(400).json({ error: 'Invalid feature configuration' });
     }
 
-    const filesResponse = await microsoftGraphService.getFiles(accessToken, folderId);
+    // Update feature flag (implement feature flag update logic)
+    console.log(`Feature flag updated: ${featureName} = ${enabled}`);
     
-    res.json({
-      files: filesResponse.value,
-      totalCount: filesResponse.value.length,
-      hasMore: !!filesResponse['@odata.nextLink']
+    res.json({ 
+      message: 'Feature flag updated successfully',
+      feature: { name: featureName, enabled }
     });
   } catch (error) {
-    console.error('Error getting files:', error);
+    console.error('Error updating feature:', error);
+    res.status(500).json({ error: 'Failed to update feature' });
+  }
+});
+
+// OneDrive authentication endpoint
+app.post('/api/onedrive/auth', validateAuthCode, async (req, res) => {
+  try {
+    const { code } = req.body;
+    debugLog('OneDrive auth request received with code:', code.substring(0, 10) + '...');
+    
+    const tokenResponse = await microsoftGraphService.getAccessToken(code);
+    debugLog('Token response received:', tokenResponse ? 'success' : 'failed');
+    
+    if (!tokenResponse) {
+      return res.status(400).json({ error: 'Failed to get access token' });
+    }
+    
+    res.json(tokenResponse);
+  } catch (error) {
+    debugError('OneDrive auth error:', error);
     res.status(500).json({ 
-      error: 'Failed to get files',
+      error: 'OneDrive authentication failed',
+      message: error.message 
+    });
+  }
+});
+
+// Get OneDrive files endpoint
+app.get('/api/onedrive/files', authenticateToken, async (req, res) => {
+  try {
+    const { folderId = 'root', accessToken } = req.query;
+    
+    if (!accessToken) {
+      return res.status(400).json({ error: 'Access token required' });
+    }
+    
+    debugLog('Getting files for folder:', folderId);
+    const files = await microsoftGraphService.getFiles(accessToken, folderId);
+    debugLog('Files retrieved:', files.length);
+    
+    res.json({ files });
+  } catch (error) {
+    debugError('Error getting OneDrive files:', error);
+    res.status(500).json({ 
+      error: 'Failed to get OneDrive files',
+      message: error.message 
+    });
+  }
+});
+
+// Get OneDrive folders endpoint
+app.get('/api/onedrive/folders', authenticateToken, async (req, res) => {
+  try {
+    const { accessToken } = req.query;
+    
+    if (!accessToken) {
+      return res.status(400).json({ error: 'Access token required' });
+    }
+    
+    debugLog('Getting OneDrive folders');
+    const folders = await microsoftGraphService.getFolders(accessToken);
+    debugLog('Folders retrieved:', folders.length);
+    
+    res.json({ folders });
+  } catch (error) {
+    debugError('Error getting OneDrive folders:', error);
+    res.status(500).json({ 
+      error: 'Failed to get OneDrive folders',
       message: error.message 
     });
   }
 });
 
 // Duplicate detection endpoint
-app.post('/api/duplicates', validateFiles, async (req, res) => {
+app.post('/api/duplicates/detect', authenticateToken, checkUsageLimit, validateFiles, async (req, res) => {
   try {
-    const { files, method = 'hash' } = req.body;
-    const accessToken = req.headers.authorization?.replace('Bearer ', '');
+    const { files, accessToken } = req.body;
     
     if (!accessToken) {
-      return res.status(401).json({ error: 'Access token required' });
+      return res.status(400).json({ error: 'Access token required' });
     }
-
-    debugLog(`Starting duplicate detection with method: ${method}`);
     
-    const results = await duplicateDetector.findDuplicates(
-      files, 
-      microsoftGraphService, 
-      accessToken, 
-      method
-    );
-
-    res.json(results);
+    debugLog('Duplicate detection request for', files.length, 'files');
+    
+    // Get file content for comparison
+    const getFileContent = async (fileId) => {
+      try {
+        return await microsoftGraphService.getFileContent(accessToken, fileId);
+      } catch (error) {
+        debugError('Error getting file content for', fileId, ':', error);
+        return null;
+      }
+    };
+    
+    // Process files in batches to avoid overwhelming the API
+    const batchSize = 10;
+    const duplicates = [];
+    
+    for (let i = 0; i < files.length; i += batchSize) {
+      const batch = files.slice(i, i + batchSize);
+      debugLog(`Processing batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(files.length / batchSize)}`);
+      
+      const batchDuplicates = await duplicateDetector.findDuplicates(batch, getFileContent);
+      duplicates.push(...batchDuplicates);
+      
+      // Small delay between batches to be respectful to the API
+      if (i + batchSize < files.length) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+    }
+    
+    debugLog('Duplicate detection completed. Found', duplicates.length, 'duplicate groups');
+    
+    // Update user usage
+    req.user.incrementUsage(files.length, duplicates.length, 0);
+    await req.user.save();
+    
+    res.json({ 
+      duplicates,
+      totalFiles: files.length,
+      duplicateGroups: duplicates.length
+    });
   } catch (error) {
-    debugError('Error detecting duplicates:', error);
+    debugError('Duplicate detection error:', error);
     res.status(500).json({ 
-      error: 'Failed to detect duplicates',
+      error: 'Duplicate detection failed',
+      message: error.message 
+    });
+  }
+});
+
+// Enhanced AI duplicate detection endpoint
+app.post('/api/duplicates/ai-detect', authenticateToken, checkUsageLimit, requireFeature('ai_detection'), validateFiles, async (req, res) => {
+  try {
+    const { files, accessToken } = req.body;
+    
+    if (!accessToken) {
+      return res.status(400).json({ error: 'Access token required' });
+    }
+    
+    debugLog('AI duplicate detection request for', files.length, 'files');
+    
+    // Get file content for comparison
+    const getFileContent = async (fileId) => {
+      try {
+        return await microsoftGraphService.getFileContent(accessToken, fileId);
+      } catch (error) {
+        debugError('Error getting file content for', fileId, ':', error);
+        return null;
+      }
+    };
+    
+    const duplicates = await enhancedAIDetector.findDuplicates(files, getFileContent);
+    debugLog('AI duplicate detection completed. Found', duplicates.length, 'duplicate groups');
+    
+    // Update user usage
+    req.user.incrementUsage(files.length, duplicates.length, 0);
+    await req.user.save();
+    
+    res.json({ 
+      duplicates,
+      totalFiles: files.length,
+      duplicateGroups: duplicates.length,
+      method: 'ai-enhanced'
+    });
+  } catch (error) {
+    debugError('AI duplicate detection error:', error);
+    res.status(500).json({ 
+      error: 'AI duplicate detection failed',
       message: error.message 
     });
   }
 });
 
 // Delete files endpoint
-app.delete('/api/files', validateFileIds, async (req, res) => {
+app.delete('/api/files', authenticateToken, validateFileIds, async (req, res) => {
   try {
-    const { fileIds } = req.body;
-    const accessToken = req.headers.authorization?.replace('Bearer ', '');
+    const { fileIds, accessToken } = req.body;
     
     if (!accessToken) {
-      return res.status(401).json({ error: 'Access token required' });
+      return res.status(400).json({ error: 'Access token required' });
     }
-
-    debugLog(`Deleting ${fileIds.length} files...`);
     
-    const results = await microsoftGraphService.deleteFiles(accessToken, fileIds);
+    debugLog('File deletion request for', fileIds.length, 'files');
     
-    res.json(results);
+    const results = [];
+    for (const fileId of fileIds) {
+      try {
+        await microsoftGraphService.deleteFile(accessToken, fileId);
+        results.push({ fileId, success: true });
+        debugLog('Successfully deleted file:', fileId);
+      } catch (error) {
+        debugError('Failed to delete file:', fileId, error);
+        results.push({ fileId, success: false, error: error.message });
+      }
+    }
+    
+    const successCount = results.filter(r => r.success).length;
+    debugLog('File deletion completed. Successfully deleted', successCount, 'of', fileIds.length, 'files');
+    
+    res.json({ 
+      results,
+      totalRequested: fileIds.length,
+      successfullyDeleted: successCount
+    });
   } catch (error) {
-    debugError('Error deleting files:', error);
+    debugError('File deletion error:', error);
     res.status(500).json({ 
-      error: 'Failed to delete files',
+      error: 'File deletion failed',
       message: error.message 
     });
   }
 });
 
-// Microsoft authentication endpoint
-app.post('/api/auth/login', validateAuthCode, async (req, res) => {
+// Smart organizer endpoint
+app.post('/api/organize', authenticateToken, checkUsageLimit, requireFeature('smart_organizer'), async (req, res) => {
   try {
-    const { code, redirectUri } = req.body;
+    const { files, organizationPlan, accessToken } = req.body;
     
-    const accessToken = await microsoftGraphService.getAccessTokenFromCode(code, redirectUri);
-    const userInfo = await microsoftGraphService.getUserInfo(accessToken);
+    if (!accessToken) {
+      return res.status(400).json({ error: 'Access token required' });
+    }
     
-    res.json({
-      accessToken,
-      user: userInfo,
-      success: true
+    if (!organizationPlan) {
+      return res.status(400).json({ error: 'Organization plan required' });
+    }
+    
+    debugLog('Smart organization request for', files.length, 'files');
+    
+    // Execute organization plan
+    const results = [];
+    for (const action of organizationPlan) {
+      try {
+        if (action.type === 'move') {
+          await microsoftGraphService.moveFile(accessToken, action.fileId, action.destinationFolderId);
+          results.push({ action, success: true });
+        } else if (action.type === 'delete') {
+          await microsoftGraphService.deleteFile(accessToken, action.fileId);
+          results.push({ action, success: true });
+        }
+      } catch (error) {
+        debugError('Failed to execute action:', action, error);
+        results.push({ action, success: false, error: error.message });
+      }
+    }
+    
+    const successCount = results.filter(r => r.success).length;
+    debugLog('Smart organization completed. Successfully executed', successCount, 'of', organizationPlan.length, 'actions');
+    
+    // Update user usage
+    req.user.incrementUsage(files.length, 0, 0);
+    await req.user.save();
+    
+    res.json({ 
+      results,
+      totalActions: organizationPlan.length,
+      successfulActions: successCount
     });
   } catch (error) {
-    debugError('Error in Microsoft authentication:', error);
+    debugError('Smart organization error:', error);
     res.status(500).json({ 
-      error: 'Authentication failed',
+      error: 'Smart organization failed',
       message: error.message 
     });
   }
-});
-
-// AI-powered duplicate detection endpoint
-app.post('/api/ai-duplicates', validateFiles, async (req, res) => {
-  try {
-    const { files } = req.body;
-    const accessToken = req.headers.authorization?.replace('Bearer ', '');
-    
-    if (!accessToken) {
-      return res.status(401).json({ error: 'Access token required' });
-    }
-    // Helper to get file content from OneDrive
-    const getFileContent = async (fileId) => {
-      return await microsoftGraphService.getFileContent(accessToken, fileId);
-    };
-    const results = await aiDuplicateDetector.findAIDuplicates(files, getFileContent);
-    res.json(results);
-  } catch (error) {
-    debugError('Error in AI duplicate detection:', error);
-    res.status(500).json({ error: 'Failed to detect AI duplicates', message: error.message });
-  }
-});
-
-// Drive info endpoint
-app.get('/api/drive-info', async (req, res) => {
-  try {
-    const accessToken = req.headers.authorization?.replace('Bearer ', '');
-    
-    if (!accessToken) {
-      return res.status(401).json({ error: 'Access token required' });
-    }
-
-    const driveInfo = await microsoftGraphService.getDriveInfo(accessToken);
-    res.json(driveInfo);
-  } catch (error) {
-    debugError('Error getting drive info:', error);
-    res.status(500).json({ 
-      error: 'Failed to get drive information',
-      message: error.message 
-    });
-  }
-});
-
-// Storage quota endpoint
-app.get('/api/storage-quota', async (req, res) => {
-  try {
-    const accessToken = req.headers.authorization?.replace('Bearer ', '');
-    
-    if (!accessToken) {
-      return res.status(401).json({ error: 'Access token required' });
-    }
-
-    const quota = await microsoftGraphService.getStorageQuota(accessToken);
-    res.json(quota);
-  } catch (error) {
-    debugError('Error getting storage quota:', error);
-    res.status(500).json({ 
-      error: 'Failed to get storage quota',
-      message: error.message 
-    });
-  }
-});
-
-// Clear folder cache endpoint
-app.delete('/api/cache/folder/:folderId', async (req, res) => {
-  try {
-    const { folderId } = req.params;
-    const accessToken = req.headers.authorization?.replace('Bearer ', '');
-    
-    if (!accessToken) {
-      return res.status(401).json({ error: 'Access token required' });
-    }
-
-    // For now, just return success since we don't have caching implemented
-    res.json({ success: true, message: 'Folder cache cleared' });
-  } catch (error) {
-    debugError('Error clearing folder cache:', error);
-    res.status(500).json({ 
-      error: 'Failed to clear folder cache',
-      message: error.message 
-    });
-  }
-});
-
-// Cache stats endpoint
-app.get('/api/cache/stats', async (req, res) => {
-  try {
-    const accessToken = req.headers.authorization?.replace('Bearer ', '');
-    
-    if (!accessToken) {
-      return res.status(401).json({ error: 'Access token required' });
-    }
-
-    // For now, return mock stats since we don't have caching implemented
-    res.json({
-      totalCachedFolders: 0,
-      totalCachedFiles: 0,
-      cacheSize: 0,
-      lastUpdated: new Date().toISOString()
-    });
-  } catch (error) {
-    debugError('Error getting cache stats:', error);
-    res.status(500).json({ 
-      error: 'Failed to get cache stats',
-      message: error.message 
-    });
-  }
-});
-
-// Health check endpoint (alias for /api/health)
-app.get('/api/health-check', (req, res) => {
-  res.json({ 
-    status: 'ok', 
-    timestamp: new Date().toISOString(),
-    uptime: process.uptime(),
-    services: {
-      microsoftGraph: microsoftGraphService.isConfigured ? 'configured' : 'mock',
-      duplicateDetector: 'ready'
-    }
-  });
 });
 
 // Error handling middleware
-app.use((err, req, res, next) => {
-  debugError('Error:', err);
-  
-  // Don't expose internal error details in production
-  const isProduction = process.env.NODE_ENV === 'production';
-  
+app.use((error, req, res, next) => {
+  console.error('Unhandled error:', error);
   res.status(500).json({ 
     error: 'Internal server error',
-    message: isProduction ? 'Something went wrong' : err.message,
-    ...(isProduction ? {} : { stack: err.stack })
+    message: process.env.NODE_ENV === 'development' ? error.message : 'Something went wrong'
   });
 });
 
@@ -418,10 +543,11 @@ app.use('*', (req, res) => {
 
 // Start server
 app.listen(PORT, () => {
-  debugLog(`🚀 BFF Server running on port ${PORT}`);
-  debugLog(`📊 Health check: http://localhost:${PORT}/api/health`);
-  debugLog(`🔗 Client URL: ${process.env.CLIENT_URL || 'http://localhost:3000'}`);
-  debugLog(`🔧 Microsoft Graph: ${microsoftGraphService.isConfigured ? 'Configured' : 'Mock Mode'}`);
+  console.log(`🚀 Server running on port ${PORT}`);
+  console.log(`📊 Health check: http://localhost:${PORT}/api/health`);
+  console.log(`🔐 Auth endpoints: http://localhost:${PORT}/api/auth`);
+  console.log(`🌐 Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`🔧 Debug mode: ${process.env.DEBUG ? 'enabled' : 'disabled'}`);
 });
 
 module.exports = app; 

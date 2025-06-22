@@ -5,6 +5,12 @@ import { analytics } from './Analytics';
 import './MultiFolderDuplicateManager.css';
 import { mfSet, mfGet, mfRemove } from '../utils/idbMultiFolder';
 import { debugLog, debugWarn, debugError, idbGet, idbRemove } from '../utils/idbState';
+import DuplicateManager from './DuplicateManager';
+import LoadingSpinner from './LoadingSpinner';
+import { useAuth } from '../hooks/useAuth';
+import { useFileManagement } from '../hooks/useFileManagement';
+import useFeatureFlags from '../hooks/useFeatureFlags';
+import FolderSelector from './FolderSelector';
 
 // Helper: Run async tasks in parallel with a concurrency limit
 async function runWithConcurrencyLimit(tasks, limit = 5) {
@@ -45,8 +51,23 @@ function getLogicalFileType(item) {
 }
 
 const MultiFolderDuplicateManager = forwardRef(({ onFetchFolderFiles, onDeleteFiles, selectedFolders: selectedFoldersProp }, ref) => {
-  const [selectedFolders, setSelectedFolders] = useState(selectedFoldersProp || []);
-  const addingFolderRef = useRef(new Set());
+  const { user, isAuthenticated } = useAuth();
+  const { 
+    selectedFolders, 
+    setSelectedFolders, 
+    duplicates, 
+    setDuplicates, 
+    loading, 
+    setLoading,
+    error,
+    setError,
+    scanForDuplicates,
+    deleteFiles,
+    clearResults
+  } = useFileManagement();
+  
+  const { isFeatureEnabled, getFeatureInfo, userTier } = useFeatureFlags();
+
   const [folderFiles, setFolderFiles] = useState({}); // { folderId: { folder, files } }
   const [duplicateGroups, setDuplicateGroups] = useState([]);
   const [selectedFiles, setSelectedFiles] = useState(new Set());
@@ -73,6 +94,8 @@ const MultiFolderDuplicateManager = forwardRef(({ onFetchFolderFiles, onDeleteFi
   const [currentFolderPath, setCurrentFolderPath] = useState([]);
   const [browserFiles, setBrowserFiles] = useState([]);
   const [isLoadingBrowser, setIsLoadingBrowser] = useState(false);
+  const [userProfile, setUserProfile] = useState(null);
+  const [showUpgradePrompt, setShowUpgradePrompt] = useState(false);
 
   const detector = useMemo(() => new DuplicateDetector(), []);
 
@@ -349,9 +372,15 @@ const MultiFolderDuplicateManager = forwardRef(({ onFetchFolderFiles, onDeleteFi
     return allFiles;
   }, [folderFiles]);
 
-  const scanForDuplicates = async () => {
+  const scanForDuplicatesLocal = async () => {
     if (selectedFolders.length === 0) {
       alert('Please select at least one folder to scan.');
+      return;
+    }
+
+    // Check usage limits for multi-folder scan
+    if (!checkUsageLimits('multi_folder_scan')) {
+      setShowUpgradePrompt(true);
       return;
     }
 
@@ -1046,6 +1075,136 @@ const MultiFolderDuplicateManager = forwardRef(({ onFetchFolderFiles, onDeleteFi
     };
   };
 
+  const checkUsageLimits = (operation) => {
+    if (!userProfile) return true;
+    
+    const { usage, limits } = userProfile;
+    
+    switch (operation) {
+      case 'multi_folder_scan':
+        if (limits.multiFolderScans === -1) return true; // Unlimited
+        return (usage.multi_folder_scan || 0) < limits.multiFolderScans;
+      case 'enhanced_ai_scan':
+        if (limits.aiScans === -1) return true; // Unlimited
+        return (usage.enhanced_ai_scan || 0) < limits.aiScans;
+      default:
+        return true;
+    }
+  };
+
+  const handleUpgrade = async (newTier) => {
+    try {
+      const response = await fetch(`${import.meta.env.VITE_BFF_URL}/api/v2/user/upgrade`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('accessToken') || 'test-token-12345'}`
+        },
+        body: JSON.stringify({ newTier })
+      });
+      
+      if (response.ok) {
+        await fetchUserProfile();
+        setShowUpgradePrompt(false);
+        alert(`Successfully upgraded to ${newTier} tier!`);
+      }
+    } catch (error) {
+      console.error('Error upgrading subscription:', error);
+      alert('Failed to upgrade subscription');
+    }
+  };
+
+  useEffect(() => {
+    fetchUserProfile();
+  }, []);
+
+  const fetchUserProfile = async () => {
+    try {
+      const response = await fetch(`${import.meta.env.VITE_BFF_URL}/api/v2/user/profile`, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('accessToken') || 'test-token-12345'}`
+        }
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        setUserProfile(data);
+      }
+    } catch (error) {
+      console.error('Error fetching user profile:', error);
+    }
+  };
+
+  // Feature flag checks
+  const hasMultiFolder = isFeatureEnabled('MULTI_FOLDER');
+  const hasBulkActions = isFeatureEnabled('BULK_ACTIONS');
+  const hasAIDetection = isFeatureEnabled('AI_DETECTION');
+  const hasSmartOrganizer = isFeatureEnabled('SMART_ORGANIZER');
+
+  const performScanForDuplicates = async () => {
+    if (!selectedFolders.length) {
+      setError('Please select at least one folder to scan');
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+    
+    try {
+      const results = await scanForDuplicates(selectedFolders, {
+        useAI: hasAIDetection,
+        useSmartOrganizer: hasSmartOrganizer
+      });
+      
+      if (results.length > 0) {
+        setDuplicates(results);
+        setShowResults(true);
+      } else {
+        setError('No duplicates found in the selected folders');
+      }
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleBulkDelete = async (selectedDuplicates) => {
+    if (!hasBulkActions) {
+      setError('Bulk actions are not available in your current plan');
+      return;
+    }
+
+    if (!selectedDuplicates.length) {
+      setError('Please select files to delete');
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Are you sure you want to delete ${selectedDuplicates.length} files? This action cannot be undone.`
+    );
+
+    if (!confirmed) return;
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      const fileIds = selectedDuplicates.map(d => d.id);
+      await deleteFiles(fileIds);
+      
+      // Remove deleted files from duplicates list
+      setDuplicates(prev => prev.filter(d => !fileIds.includes(d.id)));
+      
+      setSelectedFiles(new Set());
+      setShowResults(false);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   if (isScanning) {
     const progressPercent = scanProgress.total > 0 
       ? Math.round((scanProgress.current / scanProgress.total) * 100) 
@@ -1143,450 +1302,156 @@ const MultiFolderDuplicateManager = forwardRef(({ onFetchFolderFiles, onDeleteFi
   return (
     <div className="multi-folder-duplicate-manager">
       <div className="manager-header">
-        <h2>Multi-Folder Duplicate Finder</h2>
-        <p>Select multiple folders to find duplicates across them (including subfolders)</p>
-      </div>
-
-      <div className="folder-selection">
-        <div className="folder-selection-header">
-          <h3>Selected Folders ({selectedFolders.length})</h3>
-          <div className="folder-actions">
+        <h2>Multi-Folder Duplicate Manager</h2>
+        {!hasMultiFolder && (
+          <div className="feature-upgrade-prompt">
+            <p>Multi-folder comparison requires a Premium subscription</p>
             <button 
-              className="add-folder-btn"
-              onClick={() => setCurrentFolder({ id: 'root', name: 'Root' })}
-              disabled={isLoadingFolders}
+              className="upgrade-button"
+              onClick={() => handleUpgrade('premium')}
             >
-              {isLoadingFolders ? 'Loading...' : '📁 Browse Folders'}
+              Upgrade to Premium
             </button>
-            {selectedFolders.length > 0 && (
-              <button 
-                className="clear-folders-btn"
-                onClick={clearSavedFolders}
-                title="Clear all saved folder selections"
-              >
-                Clear All
-              </button>
-            )}
           </div>
-        </div>
-        
-        {isLoadingFolders && scanProgress.total > 0 && (
-          <div className="scan-progress">
-            <p>Scanning: {scanProgress.folderName}</p>
-            <div className="progress-bar">
-              <div 
-                className="progress-fill" 
-                style={{ width: `${(scanProgress.current / scanProgress.total) * 100}%` }}
-              ></div>
-            </div>
-          </div>
-        )}
-
-        <div className="selected-folders">
-          {selectedFolders.map((folder) => (
-            <div key={folder.id} className="selected-folder">
-              <span className="folder-name">📁 {folder.name}</span>
-              <span className="folder-file-count">
-                {folderFiles[folder.id]?.totalFiles || 0} files (recursive)
-              </span>
-              <button 
-                className="remove-folder-btn"
-                onClick={() => removeFolder(folder.id)}
-                title="Remove folder"
-              >
-                ×
-              </button>
-            </div>
-          ))}
-        </div>
-        {selectedFolders.length < 2 && (
-          <p className="folder-hint">
-            Select at least 2 folders to start comparing for duplicates
-          </p>
         )}
       </div>
 
-      {/* Embedded FileBrowser for folder selection */}
-      {currentFolder && (
-        <div className="embedded-file-browser">
-          <div className="browser-header">
-            <h3>Browse and Select Folders</h3>
-            <button 
-              className="close-browser-btn"
-              onClick={() => setCurrentFolder(null)}
-              title="Close folder browser"
-            >
-              ×
-            </button>
-          </div>
-          <FileBrowser
-            files={browserFiles}
-            currentFolder={currentFolder}
-            folderPath={currentFolderPath}
-            onFolderClick={handleFolderClick}
-            onBreadcrumbClick={handleBreadcrumbClick}
-            onFileSelect={handleFileSelect}
-            onAddToComparison={handleAddToComparison}
-            defaultViewMode="grid"
-            showFileSizes={true}
-            showFileDates={true}
-            compactMode={true}
-          />
-        </div>
-      )}
-
-      {selectedFolders.length >= 2 && (
+      {hasMultiFolder ? (
         <>
-          <div className="folder-summary">
-            <div className="summary-item">
-              <span className="summary-label">Total Folders:</span>
-              <span className="summary-value">{summary.folderCount}</span>
-            </div>
-            <div className="summary-item">
-              <span className="summary-label">Total Files (Recursive):</span>
-              <span className="summary-value">{summary.totalFiles}</span>
-            </div>
-            <div className="summary-item">
-              <span className="summary-label">Total Size:</span>
-              <span className="summary-value">{detector.formatFileSize(summary.totalSize)}</span>
-            </div>
+          <div className="folder-selection-section">
+            <FolderSelector
+              selectedFolders={selectedFolders}
+              onFoldersChange={setSelectedFolders}
+              maxFolders={userTier === 'enterprise' ? 10 : 5}
+            />
           </div>
 
-          <div className="folder-details">
-            <h3>Folder Details:</h3>
-            <div className="folder-stats-grid">
-              {summary.folderStats.map((stat, index) => (
-                <div key={index} className="folder-stat-item">
-                  <div className="folder-stat-header">
-                    <span className="folder-stat-name">📁 {stat.name}</span>
-                  </div>
-                  <div className="folder-stat-details">
-                    <span className="folder-stat-count">{stat.fileCount} files</span>
-                    <span className="folder-stat-size">{detector.formatFileSize(stat.size)}</span>
-                    {stat.maxDepth > 0 && (
-                      <span className="folder-stat-depth">Max depth: {stat.maxDepth}</span>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="detection-methods">
-            <h3>Detection Methods:</h3>
-            {Object.entries(detectionMethods).map(([method, enabled]) => (
-              <label key={method} className="method-checkbox">
-                <input
-                  type="checkbox"
-                  checked={enabled}
-                  onChange={(e) => setDetectionMethods(prev => ({
-                    ...prev,
-                    [method]: e.target.checked
-                  }))}
-                />
-                {getMethodDisplayName(method)}
-              </label>
-            ))}
-          </div>
-
-          {/* Scan Button */}
           <div className="scan-controls">
             <button 
-              className="scan-button primary"
-              onClick={scanForDuplicates}
-              disabled={isScanning || Object.keys(detectionMethods).filter(m => detectionMethods[m]).length === 0}
-              title={Object.keys(detectionMethods).filter(m => detectionMethods[m]).length === 0 
-                ? 'Please select at least one detection method' 
-                : 'Start scanning for duplicates across all selected folders'}
+              className="scan-button"
+              onClick={performScanForDuplicates}
+              disabled={loading || selectedFolders.length === 0}
             >
-              {isScanning ? '🔄 Scanning...' : '🔍 Scan for Duplicates'}
+              {loading ? <LoadingSpinner size="small" /> : 'Scan for Duplicates'}
             </button>
-            {Object.keys(detectionMethods).filter(m => detectionMethods[m]).length === 0 && (
-              <p className="scan-hint">Please select at least one detection method to start scanning</p>
-            )}
-          </div>
-
-          {/* Filtering Controls */}
-          <div className="filtering-controls">
-            <div className="filter-header">
-              <h3>Filter & Sort Options</h3>
+            
+            {duplicates.length > 0 && (
               <button 
-                className="clear-filters-btn"
-                onClick={clearFilters}
-                disabled={!filterFolder && !filterSize && !filterDate}
+                className="clear-button"
+                onClick={clearResults}
               >
-                🗑️ Clear Filters
+                Clear Results
               </button>
-            </div>
-            
-            <div className="filter-inputs">
-              <div className="filter-group">
-                <label className="filter-label">📁 Folder Path:</label>
-                <input
-                  type="text"
-                  value={filterFolder}
-                  onChange={(e) => setFilterFolder(e.target.value)}
-                  placeholder="Enter folder path to filter..."
-                  className="filter-input"
-                />
-              </div>
-              
-              <div className="filter-group">
-                <label className="filter-label">📏 File Size:</label>
-                <input
-                  type="text"
-                  value={filterSize}
-                  onChange={(e) => setFilterSize(e.target.value)}
-                  placeholder="e.g., >10MB, <1GB, 5MB"
-                  className="filter-input"
-                />
-              </div>
-              
-              <div className="filter-group">
-                <label className="filter-label">📅 Date Modified:</label>
-                <input
-                  type="date"
-                  value={filterDate}
-                  onChange={(e) => setFilterDate(e.target.value)}
-                  className="filter-input"
-                />
-              </div>
-            </div>
-            
-            <div className="filter-summary">
-              <span className="filter-info">
-                Showing {getFilterSummary().filtered} of {getFilterSummary().total} files
-                {getFilterSummary().hidden > 0 && (
-                  <span className="filter-hidden"> ({getFilterSummary().hidden} hidden)</span>
-                )}
-              </span>
-            </div>
-          </div>
-
-          {/* Enhanced Summary Bar */}
-          <div className="enhanced-summary-bar">
-            <div className="summary-stats">
-              <div className="summary-stat-item">
-                <span className="stat-label">Duplicate Groups:</span>
-                <span className="stat-value">{duplicateGroups.length}</span>
-              </div>
-              <div className="summary-stat-item">
-                <span className="stat-label">Total Duplicate Files:</span>
-                <span className="stat-value">{getSelectionSummary().totalDuplicateFiles}</span>
-              </div>
-              <div className="summary-stat-item">
-                <span className="stat-label">Selected Files:</span>
-                <span className="stat-value">{getSelectionSummary().selectedFiles}</span>
-              </div>
-              <div className="summary-stat-item">
-                <span className="stat-label">Space to Free:</span>
-                <span className="stat-value highlight">{detector.formatFileSize(getSelectionSummary().selectedSize)}</span>
-              </div>
-              {duplicateGroups.length > 0 && (
-                <div className="summary-stat-item strategy-indicator">
-                  <span className="stat-label">Current Strategy:</span>
-                  <span className="stat-value strategy-value">
-                    {currentKeepStrategy === 'newest' && '🆕 Keep Newest'}
-                    {currentKeepStrategy === 'oldest' && '📅 Keep Oldest'}
-                    {currentKeepStrategy === 'largest' && '📏 Keep Largest'}
-                    {currentKeepStrategy === 'smallest' && '📐 Keep Smallest'}
-                  </span>
-                </div>
-              )}
-            </div>
-            
-            <div className="selection-controls">
-              <div className="smart-selection-buttons">
-                <button 
-                  className="smart-select-btn"
-                  onClick={smartSelectKeepNewest}
-                  title="Keep newest file in each group, select others for deletion"
-                >
-                  🆕 Keep Newest
-                </button>
-                <button 
-                  className="smart-select-btn"
-                  onClick={smartSelectKeepOldest}
-                  title="Keep oldest file in each group, select others for deletion"
-                >
-                  📅 Keep Oldest
-                </button>
-                <button 
-                  className="smart-select-btn"
-                  onClick={smartSelectKeepLargest}
-                  title="Keep largest file in each group, select others for deletion"
-                >
-                  📏 Keep Largest
-                </button>
-                <button 
-                  className="smart-select-btn"
-                  onClick={smartSelectKeepSmallest}
-                  title="Keep smallest file in each group, select others for deletion"
-                >
-                  📐 Keep Smallest
-                </button>
-              </div>
-              
-              <div className="bulk-selection-buttons">
-                <button 
-                  className="bulk-select-btn"
-                  onClick={selectAllDuplicates}
-                  title="Select all duplicate files for deletion"
-                >
-                  ☑️ Select All
-                </button>
-                <button 
-                  className="bulk-select-btn"
-                  onClick={deselectAll}
-                  title="Deselect all files"
-                >
-                  ☐ Deselect All
-                </button>
-                <button 
-                  className="bulk-select-btn"
-                  onClick={invertSelection}
-                  title="Invert current selection"
-                >
-                  ↕️ Invert Selection
-                </button>
-              </div>
-            </div>
-            
-            {getSelectionSummary().selectedFiles > 0 && (
-              <div className="delete-section">
-                <button 
-                  className="delete-button primary"
-                  onClick={handleDeleteSelected}
-                  title={`Delete ${getSelectionSummary().selectedFiles} files and free ${detector.formatFileSize(getSelectionSummary().selectedSize)} of space`}
-                >
-                  🗑️ Delete Selected Files ({getSelectionSummary().selectedFiles})
-                </button>
-              </div>
             )}
           </div>
 
-          <div className="duplicate-groups">
-            {duplicateGroups.map((group, groupIndex) => {
-              // Apply filtering and sorting to group files
-              const filteredFiles = filterFiles(group.files);
-              const sortedFiles = sortFiles(filteredFiles);
-              
-              // Skip rendering the entire group if no files match filters
-              if (sortedFiles.length === 0) {
-                return null;
-              }
-              
-              return (
-                <div key={groupIndex} className="duplicate-group">
-                  <div className="group-header">
-                    <div className="group-info">
-                      <h3>{getMethodDisplayName(group.method)}</h3>
-                      <p>{getMethodDescription(group.method)}</p>
-                      <p>{group.files.length} files • {detector.formatFileSize(group.totalSize)}</p>
-                      {group.files.length > 1 && (
-                        <div className="keeper-info">
-                          <span className="keeper-label">💾 Keeper ({currentKeepStrategy}):</span>
-                          <span className="keeper-file">{getKeeperFile(group, currentKeepStrategy)?.name}</span>
-                        </div>
+          {error && (
+            <div className="error-message">
+              {error}
+            </div>
+          )}
+
+          {showResults && duplicates.length > 0 && (
+            <div className="results-section">
+              <div className="results-header">
+                <h3>Duplicate Files Found: {duplicates.length}</h3>
+                {hasBulkActions && (
+                  <div className="bulk-actions">
+                    <button
+                      className="bulk-delete-button"
+                      onClick={() => handleBulkDelete(selectedFiles)}
+                      disabled={selectedFiles.size === 0}
+                    >
+                      Delete Selected ({selectedFiles.size})
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              <div className="duplicates-list">
+                {duplicates.map((duplicate, index) => (
+                  <div key={index} className="duplicate-group">
+                    <div className="group-header">
+                      <h4>Duplicate Group {index + 1}</h4>
+                      {hasBulkActions && (
+                        <label className="select-all-checkbox">
+                          <input
+                            type="checkbox"
+                            checked={duplicate.files.every(f => selectedFiles.has(f.id))}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setSelectedFiles(prev => new Set([...prev, ...duplicate.files.map(f => f.id)]));
+                              } else {
+                                setSelectedFiles(prev => new Set(prev.filter(id => !duplicate.files.map(f => f.id).includes(id))));
+                              }
+                            }}
+                          />
+                          Select All
+                        </label>
                       )}
                     </div>
-                    <label className="group-select">
-              <input
-                        type="checkbox"
-                        checked={group.files.every(file => selectedFiles.has(file.id))}
-                        onChange={(e) => handleGroupSelection(groupIndex, e.target.checked)}
-                      />
-                      Select All
-                    </label>
-            </div>
-                  
-                  {/* Sortable Column Headers */}
-                  <div className="file-list-header sticky-col">
-                    <div className="header-cell sortable" onClick={() => handleSort('name')}>
-                      <span>File Name</span>
-                      {sortBy === 'name' && <span className="sort-indicator">{sortOrder === 'asc' ? '↑' : '↓'}</span>}
-                    </div>
-                    <div className="header-cell sortable" onClick={() => handleSort('folder')}>
-                      <span>Folder Path</span>
-                      {sortBy === 'folder' && <span className="sort-indicator">{sortOrder === 'asc' ? '↑' : '↓'}</span>}
-                    </div>
-                    <div className="header-cell sortable" onClick={() => handleSort('size')}>
-                      <span>Size</span>
-                      {sortBy === 'size' && <span className="sort-indicator">{sortOrder === 'asc' ? '↑' : '↓'}</span>}
-                    </div>
-                    <div className="header-cell sortable" onClick={() => handleSort('date')}>
-                      <span>Date Modified</span>
-                      {sortBy === 'date' && <span className="sort-indicator">{sortOrder === 'asc' ? '↑' : '↓'}</span>}
-                    </div>
-                    <div className="header-cell sortable" onClick={() => handleSort('depth')}>
-                      <span>Depth</span>
-                      {sortBy === 'depth' && <span className="sort-indicator">{sortOrder === 'asc' ? '↑' : '↓'}</span>}
-                    </div>
-                    <div className="header-cell">
-                      <span>Select</span>
-                    </div>
-                  </div>
-                  
-                  <div className="file-list">
-                    {sortedFiles.map((file) => (
-                      <div 
-                        key={file.id} 
-                        className={`file-item ${selectedFiles.has(file.id) ? 'selected' : ''}`}
-                        title={`File: ${file.name}
-Path: ${file.fullPath}
-Size: ${detector.formatFileSize(file.size)}
-Modified: ${new Date(file.lastModifiedDateTime).toLocaleString()}
-Depth: ${file.depth} levels deep`}
-                      >
-                        <div className="file-cell file-name sticky-col">{file.name}</div>
-                        <div className="file-cell file-folder" style={{ paddingLeft: `${file.depth * 20 + 8}px` }}>
-                          📁 {file.fullPath}
-                        </div>
-                        <div className="file-cell file-size">{detector.formatFileSize(file.size)}</div>
-                        <div className="file-cell file-date">
-                          {new Date(file.lastModifiedDateTime).toLocaleDateString()}
-                        </div>
-                        <div className="file-cell file-depth">{file.depth}</div>
-                        <div className="file-cell file-select">
-                          <label className="file-select-label">
-                    <input
+                    
+                    <div className="files-grid">
+                      {duplicate.files.map((file) => (
+                        <div key={file.id} className="file-card">
+                          {hasBulkActions && (
+                            <input
                               type="checkbox"
                               checked={selectedFiles.has(file.id)}
-                              onChange={(e) => handleFileSelection(file.id, e.target.checked)}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setSelectedFiles(prev => new Set([...prev, file.id]));
+                                } else {
+                                  setSelectedFiles(prev => new Set(prev.filter(id => id !== file.id)));
+                                }
+                              }}
                             />
-                          </label>
+                          )}
+                          
+                          <div className="file-info">
+                            <h5>{file.name}</h5>
+                            <p>Size: {detector.formatFileSize(file.size)}</p>
+                            <p>Path: {file.fullPath}</p>
+                            {file.similarity && (
+                              <p>Similarity: {Math.round(file.similarity * 100)}%</p>
+                            )}
+                          </div>
+                          
+                          <div className="file-actions">
+                            <button
+                              className="delete-button"
+                              onClick={() => handleDeleteSelected(file.id)}
+                              title="Delete file"
+                            >
+                              Delete
+                            </button>
+                            <button
+                              className="view-button"
+                              onClick={() => window.open(file.webUrl, '_blank')}
+                              title="View in OneDrive"
+                            >
+                              View
+                            </button>
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      ))}
+                    </div>
                   </div>
-                </div>
-              );
-            })}
-            
-            {/* Show message when all groups are filtered out */}
-            {duplicateGroups.length > 0 && duplicateGroups.every(group => {
-              const filteredFiles = filterFiles(group.files);
-              return filteredFiles.length === 0;
-            }) && (
-              <div className="no-files-message">
-                <p>No files match the current filters.</p>
-                <button 
-                  className="clear-filters-btn small"
-                  onClick={clearFilters}
-                >
-                  Clear Filters
-                </button>
+                ))}
               </div>
-            )}
-          </div>
-
-          {duplicateGroups.length === 0 && (
-            <div className="no-duplicates">
-              <p>No duplicate files found across the selected folders.</p>
-              <p>Try selecting different folders or adjusting the detection methods.</p>
             </div>
           )}
         </>
+      ) : (
+        <div className="feature-disabled">
+          <p>Multi-folder duplicate detection is not available in your current plan.</p>
+          <button 
+            className="upgrade-button"
+            onClick={() => handleUpgrade('premium')}
+          >
+            Upgrade to Premium
+          </button>
+        </div>
       )}
     </div>
   );

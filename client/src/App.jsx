@@ -1,25 +1,19 @@
 import React, { useState, useEffect, Suspense, lazy } from 'react';
-import { BrowserRouter as Router, Routes, Route, NavLink, useNavigate } from 'react-router-dom';
-import { PublicClientApplication } from '@azure/msal-browser';
-import { MsalProvider, useMsal, useIsAuthenticated } from "@azure/msal-react";
+import { BrowserRouter as Router, Routes, Route, NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { ThemeProvider, useTheme } from './contexts/ThemeContext';
+import { AuthProvider, useAuth } from './contexts/AuthContext';
 import TermsOfService from './components/TermsOfService';
 import PrivacyPolicy from './components/PrivacyPolicy';
 import ThemeToggle from './components/ThemeToggle';
 import UserPreferences from './components/UserPreferences';
 import AnalyticsConsent from './components/AnalyticsConsent';
 import LoadingSpinner from './components/LoadingSpinner';
+import AuthModal from './components/AuthModal';
 import Footer from './components/Footer';
 import { analytics } from './components/Analytics';
-import bffApi from './services/bffApi';
 import logo from './logo.svg';
 import './App.css';
 import './styles/themes.css';
-import { idbSet, idbGet, idbSetCache, idbGetCache, idbRemove } from './utils/idbState';
-import { msalIdbCachePlugin } from './utils/msalIdbCache';
-import FileExplorerGrid from './components/FileExplorerGrid';
-import { formatFileSize, getFileIcon, getFileType } from './utils/fileUtils';
-import { useAuth } from './hooks/useAuth';
 import debugEnv from './debug-env';
 
 // Debug environment variables
@@ -32,48 +26,46 @@ const MultiComparePage = lazy(() => import('./pages/MultiComparePage'));
 const SmartOrganizerPage = lazy(() => import('./pages/SmartOrganizerPage'));
 const NotFoundPage = lazy(() => import('./pages/NotFoundPage'));
 
-// MSAL configuration
-const msalConfig = {
-  auth: {
-    clientId: import.meta.env.VITE_CLIENT_ID,
-    authority: 'https://login.microsoftonline.com/consumers',
-    redirectUri: window.location.origin,
-    postLogoutRedirectUri: window.location.origin,
-  },
-  cache: {
-    cacheLocation: 'custom',
-    storeAuthStateInCookie: false,
-    cachePlugin: msalIdbCachePlugin,
-  },
-  system: {
-    // ... logger config ...
-  }
-};
-
-const msalInstance = new PublicClientApplication(msalConfig);
-
 function AppLayout() {
   const { theme } = useTheme();
-  const { isAuthenticated, login, logout, instance } = useAuth();
-  const [isInitialized, setIsInitialized] = useState(false);
+  const { 
+    isAuthenticated, 
+    user, 
+    logout, 
+    loading 
+  } = useAuth();
   const [showPreferences, setShowPreferences] = useState(false);
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [authMode, setAuthMode] = useState('login');
   const navigate = useNavigate();
-  
-  console.log('AppLayout rendered - isAuthenticated:', isAuthenticated, 'isInitialized:', isInitialized);
-  
-  // Initialize MSAL
-  useEffect(() => {
-    console.log('Initializing MSAL...');
-    instance.initialize().then(() => {
-      console.log('MSAL initialized successfully');
-      setIsInitialized(true);
-    }).catch(error => {
-      console.error('MSAL initialization failed:', error);
-    });
-  }, [instance]);
+  const location = useLocation();
 
-  if (!isInitialized) {
-    console.log('Showing loading spinner - not initialized');
+  // Handle OAuth callback
+  useEffect(() => {
+    const urlParams = new URLSearchParams(location.search);
+    const token = urlParams.get('token');
+    const refreshToken = urlParams.get('refreshToken');
+    const error = urlParams.get('error');
+
+    if (token && refreshToken) {
+      // Handle successful OAuth callback
+      const { handleOAuthCallback } = useAuth();
+      handleOAuthCallback(token, refreshToken);
+      
+      // Clean up URL
+      navigate(location.pathname, { replace: true });
+    } else if (error) {
+      // Handle OAuth error
+      console.error('OAuth error:', error);
+      setAuthMode('login');
+      setShowAuthModal(true);
+      
+      // Clean up URL
+      navigate(location.pathname, { replace: true });
+    }
+  }, [location, navigate]);
+
+  if (loading) {
     return (
       <div style={{ padding: '2rem', textAlign: 'center' }}>
         <h2>Loading OneDrive Duplicate Finder...</h2>
@@ -83,7 +75,16 @@ function AppLayout() {
     );
   }
 
-  console.log('Rendering main app layout');
+  const handleLogin = () => {
+    setAuthMode('login');
+    setShowAuthModal(true);
+  };
+
+  const handleSignup = () => {
+    setAuthMode('register');
+    setShowAuthModal(true);
+  };
+
   return (
     <div className={`App ${theme}`}>
       <header className="App-header">
@@ -94,6 +95,16 @@ function AppLayout() {
           </div>
           <div className="header-controls">
             <ThemeToggle />
+            {isAuthenticated && (
+              <div className="user-info">
+                <span className="user-name">
+                  {user?.displayName || `${user?.firstName} ${user?.lastName}`}
+                </span>
+                <span className="user-tier">
+                  {user?.subscription?.tier || 'Free'}
+                </span>
+              </div>
+            )}
             {isAuthenticated && (
               <button 
                 className="preferences-button"
@@ -108,16 +119,20 @@ function AppLayout() {
                 Logout
               </button>
             ) : (
-              <button className="login-button" onClick={login}>
-                Login
-              </button>
+              <div className="auth-buttons">
+                <button className="login-button" onClick={handleLogin}>
+                  Sign In
+                </button>
+                <button className="signup-button" onClick={handleSignup}>
+                  Sign Up
+                </button>
+              </div>
             )}
           </div>
         </div>
       </header>
 
       <div className="container">
-        {showPreferences && <UserPreferences onClose={() => setShowPreferences(false)} />}
         <AnalyticsConsent onConsent={analytics.handleConsent} />
 
         <div className="content-area">
@@ -132,16 +147,26 @@ function AppLayout() {
           <main className="main-content">
             <Suspense fallback={<LoadingSpinner />}>
               <Routes>
-                <Route path="/" element={isAuthenticated ? <HomePage /> : <LoginPrompt onLogin={login} />} />
-                <Route path="/browse" element={isAuthenticated ? <BrowsePage /> : <LoginPrompt onLogin={login} />} />
-                <Route path="/multi-compare" element={isAuthenticated ? <MultiComparePage /> : <LoginPrompt onLogin={login} />} />
-                <Route path="/smart-organizer" element={isAuthenticated ? <SmartOrganizerPage /> : <LoginPrompt onLogin={login} />} />
+                <Route path="/" element={<HomePage />} />
+                <Route path="/browse" element={isAuthenticated ? <BrowsePage /> : <LoginPrompt onLogin={handleLogin} onSignup={handleSignup} />} />
+                <Route path="/multi-compare" element={isAuthenticated ? <MultiComparePage /> : <LoginPrompt onLogin={handleLogin} onSignup={handleSignup} />} />
+                <Route path="/smart-organizer" element={isAuthenticated ? <SmartOrganizerPage /> : <LoginPrompt onLogin={handleLogin} onSignup={handleSignup} />} />
                 <Route path="*" element={<NotFoundPage />} />
               </Routes>
             </Suspense>
           </main>
         </div>
       </div>
+      
+      {/* Modals outside container to ensure proper overlay rendering */}
+      {showPreferences && <UserPreferences isOpen={showPreferences} onClose={() => setShowPreferences(false)} />}
+      {showAuthModal && (
+        <AuthModal 
+          isOpen={showAuthModal} 
+          onClose={() => setShowAuthModal(false)}
+          initialMode={authMode}
+        />
+      )}
       
       <Footer onPageChange={(page) => {
         if (page === 'terms') navigate('/terms');
@@ -151,11 +176,14 @@ function AppLayout() {
   );
 }
 
-const LoginPrompt = ({ onLogin }) => (
+const LoginPrompt = ({ onLogin, onSignup }) => (
   <div className="login-container">
     <h2>Welcome to the OneDrive Duplicate Finder</h2>
-    <p>Please log in with your Microsoft account to continue.</p>
-    <button onClick={onLogin}>Login with Microsoft</button>
+    <p>Please sign in or create an account to continue.</p>
+    <div className="login-buttons">
+      <button onClick={onLogin} className="login-button">Sign In</button>
+      <button onClick={onSignup} className="signup-button">Create Account</button>
+    </div>
   </div>
 );
 
@@ -163,13 +191,13 @@ function App() {
   return (
     <Router>
       <ThemeProvider>
-        <MsalProvider instance={msalInstance}>
+        <AuthProvider>
           <Routes>
             <Route path="/*" element={<AppLayout />} />
             <Route path="/terms" element={<TermsOfService />} />
             <Route path="/privacy" element={<PrivacyPolicy />} />
           </Routes>
-        </MsalProvider>
+        </AuthProvider>
       </ThemeProvider>
     </Router>
   );

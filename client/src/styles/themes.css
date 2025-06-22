@@ -201,9 +201,9 @@
   --font-bold: 700;
 
   /* ===== TRANSITIONS ===== */
-  --transition-fast: 0.15s ease;
-  --transition-normal: 0.3s ease;
-  --transition-slow: 0.5s ease;
+  --transition-normal: 0.2s ease-in-out;
+  --transition-fast: 0.1s ease-in-out;
+  --transition-slow: 0.3s ease-in-out;
 
   /* ===== Z-INDEX ===== */
   --z-dropdown: 1000;
@@ -213,6 +213,18 @@
   --z-modal: 1050;
   --z-popover: 1060;
   --z-tooltip: 1070;
+
+  /* ===== ACCENT COLORS ===== */
+  --accent-color: #ff6b35;
+  --accent-hover: #e55a2b;
+
+  /* ===== ADDITIONAL SPACING ===== */
+  --spacing-3xl: 4rem;
+  --spacing-4xl: 5rem;
+
+  /* ===== ADDITIONAL TEXT SIZES ===== */
+  --text-4xl: 2.25rem;
+  --text-5xl: 3rem;
 }
 
 /* CSS Variables for Dark Theme */

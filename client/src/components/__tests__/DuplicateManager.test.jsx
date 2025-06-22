@@ -1,6 +1,6 @@
 import React from 'react';
-import { render, screen, waitFor, act } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { render, screen, waitFor, act, cleanup } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import DuplicateManager from '../DuplicateManager';
 import { ThemeProvider } from '../../contexts/ThemeContext';
 
@@ -25,10 +25,13 @@ vi.mock('../../hooks/useAuth', () => ({
 }));
 
 // Mock the DuplicateDetector
+const mockFindAllDuplicates = vi.fn().mockResolvedValue([]);
+const mockFormatFileSize = vi.fn().mockReturnValue('1 MB');
+
 vi.mock('../../utils/duplicateDetector', () => ({
   DuplicateDetector: vi.fn().mockImplementation(() => ({
-    findAllDuplicates: vi.fn().mockResolvedValue([]),
-    formatFileSize: vi.fn().mockReturnValue('1 MB')
+    findAllDuplicates: mockFindAllDuplicates,
+    formatFileSize: mockFormatFileSize
   }))
 }));
 
@@ -73,9 +76,14 @@ describe('DuplicateManager', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockFindAllDuplicates.mockResolvedValue([]);
   });
 
-  it('should render without crashing', () => {
+  afterEach(() => {
+    cleanup();
+  });
+
+  it('should render without crashing', async () => {
     render(
       <DuplicateManager 
         files={mockFiles}
@@ -85,10 +93,13 @@ describe('DuplicateManager', () => {
       />, 
       { wrapper }
     );
-    expect(screen.getByText(/Duplicate File Manager/i)).toBeInTheDocument();
+    
+    await waitFor(() => {
+      expect(screen.getByText(/Duplicate File Manager/i)).toBeInTheDocument();
+    });
   });
 
-  it('should show current folder location', () => {
+  it('should show current folder location', async () => {
     render(
       <DuplicateManager 
         files={mockFiles}
@@ -98,10 +109,13 @@ describe('DuplicateManager', () => {
       />, 
       { wrapper }
     );
-    expect(screen.getByText(/Test Folder/i)).toBeInTheDocument();
+    
+    await waitFor(() => {
+      expect(screen.getByText(/Test Folder/i)).toBeInTheDocument();
+    });
   });
 
-  it('should show root folder when no current folder', () => {
+  it('should show root folder when no current folder', async () => {
     render(
       <DuplicateManager 
         files={mockFiles}
@@ -111,10 +125,13 @@ describe('DuplicateManager', () => {
       />, 
       { wrapper }
     );
-    expect(screen.getByText(/Root Folder/i)).toBeInTheDocument();
+    
+    await waitFor(() => {
+      expect(screen.getByText(/Root Folder/i)).toBeInTheDocument();
+    });
   });
 
-  it('should show detection methods', () => {
+  it('should show detection methods', async () => {
     render(
       <DuplicateManager 
         files={mockFiles}
@@ -124,8 +141,12 @@ describe('DuplicateManager', () => {
       />, 
       { wrapper }
     );
-    expect(screen.getByText(/Detection Methods/i)).toBeInTheDocument();
-    expect(screen.getByText(/Exact Match/i)).toBeInTheDocument();
-    expect(screen.getByText(/Similar Names/i)).toBeInTheDocument();
+    
+    await waitFor(() => {
+      const detectionMethodsElements = screen.getAllByText(/Detection Methods/i);
+      expect(detectionMethodsElements[0]).toBeInTheDocument();
+      expect(screen.getByText(/Exact Match/i)).toBeInTheDocument();
+      expect(screen.getByText(/Similar Names/i)).toBeInTheDocument();
+    });
   });
 }); 
